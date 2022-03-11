@@ -330,7 +330,7 @@ class Project:
 
         bom = {
             "count_part": len(parts),
-            "count_unique": len(len(uniquekeys)),
+            "count_unique": len(uniquekeys),
             "parts": bom_parts,
             "sheets": self.sheets,
         }
