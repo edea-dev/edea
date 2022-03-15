@@ -1,8 +1,6 @@
 """
 Blub
 """
-
-import json
 import os
 import re
 import time
@@ -11,6 +9,7 @@ from dataclasses import dataclass
 from itertools import filterfalse, groupby
 from operator import methodcaller
 from typing import OrderedDict, Tuple, Union
+from uuid import uuid4
 
 Symbol = str
 Number = (int, float)
@@ -35,21 +34,32 @@ drawable_types = ["pin", "polyline", "rectangle"]
 
 lib_symbols = {}
 
+TOKENIZE_EXPR = re.compile("""("[^"]*"|\(|\)|"|[^\s()"]+)""")
+
 
 @dataclass
 class Expr(UserList):
-    "Expr lisp-y kicad expressions"
+    """Expr lisp-y kicad expressions"""
     name: str
     data: list
 
     _more_than_once: set
     _known_attrs: set
 
-    def __init__(self, typ: str) -> None:
+    def __init__(self, typ: str, *args) -> None:
+        """ __init__ builds a new pin with typ as the type
+        passing additional arguments will append them to the list and Expr.parsed() will be called afterwards
+        to update the internals.
+        """
         super().__init__()
         self.name = typ
         self._known_attrs = set()
         self._more_than_once = set()
+
+        # optionally initialize with anything thrown at init
+        if len(args) > 0:
+            self.extend(args)
+            self.parsed()
 
     def __str__(self) -> str:
         sub = " ".join(map(methodcaller("__str__"), self.data))
@@ -57,7 +67,7 @@ class Expr(UserList):
 
     def apply(self, cls, func) -> None:
         """
-        call func on all objects in data recurisvely which match the type
+        call func on all objects in data recursively which match the type
 
         to call an instance method, just use e.g. v.apply(Pad, methodcaller("move_xy", x, y))
         """
@@ -70,7 +80,7 @@ class Expr(UserList):
                     item.apply(cls, func)
 
     def parsed(self):
-        "sub-classes can parse additional stuff out of data now"
+        """subclasses can parse additional stuff out of data now"""
         for item in self.data:
             if not isinstance(item, Expr):
                 continue
@@ -93,14 +103,17 @@ class Expr(UserList):
 
         if name not in self._more_than_once:
             for item in self.data:
-                if item.name == name:
+                if type(item) is str:
+                    if item == name:
+                        return item
+                elif item.name == name:
                     return item
 
-        dict_items = OrderedDict()
+        dict_items = {}
         items = []
         skip = False
 
-        # use datæ[0] as dict key in case there's no duplicates
+        # use data[0] as dict key in case there's no duplicates
         # this allows us to access e.g. properties by their key
         for item in self.data:
             if item.name == name:
@@ -139,7 +152,7 @@ class Expr(UserList):
 
 @dataclass(init=False)
 class Movable(Expr):
-    "Movable is an object with a position"
+    """Movable is an object with a position"""
 
     def move_xy(self, x: float, y: float) -> None:
         "move_xy adds the position offset x and y to the object"
@@ -157,7 +170,7 @@ class Drawable(Movable):
     """
 
     def draw(self, at: Tuple[float, float]):
-        "draw the shape with the given offset"
+        """draw the shape with the given offset"""
         if self.name == "pin":
             # raise NotImplementedError(self.name)
             pass
@@ -173,24 +186,24 @@ class Drawable(Movable):
             x_end = self.end[0]
             y_end = self.end[1]
             print(
-                f'<rect x="{x_start+at[0]}" y="{y_start+at[1]}" width="{x_start - x_end}" height="{y_start-y_end}" />'
+                f'<rect x="{x_start + at[0]}" y="{y_start + at[1]}" width="{x_start - x_end}" height="{y_start - y_end}" />'
             )
         else:
             raise NotImplementedError(self.name)
 
 
 def tokenize(chars: str) -> list[str]:
-    "Convert a string of characters into a list of tokens."
-    return re.findall("""("[^"]*"|\(|\)|"|[^\s()"]+)""", chars)
+    """Convert a string of characters into a list of tokens."""
+    return TOKENIZE_EXPR.findall(chars)
 
 
-def parse(program: str) -> Expr:
-    "Parse KiCAD s-expr from a string"
+def from_str(program: str) -> Expr:
+    """Parse KiCAD s-expr from a string"""
     return read_from_tokens(tokenize(program), "")
 
 
 def read_from_tokens(tokens: list, parent: str) -> Union[Expr, int, float, str]:
-    "Read an expression from a sequence of tokens."
+    """Read an expression from a sequence of tokens."""
     if len(tokens) == 0:
         raise SyntaxError("unexpected EOF")
     token = tokens.pop(0)
@@ -222,7 +235,7 @@ def read_from_tokens(tokens: list, parent: str) -> Union[Expr, int, float, str]:
 
 
 def atom(token: str) -> Atom:
-    "Numbers become numbers; every other token is a symbol."
+    """Numbers become numbers; every other token is a symbol."""
     try:
         return int(token)
     except ValueError:
@@ -249,7 +262,7 @@ class Project:
     def parse(self):
         """parse the base schematic"""
         with open(self.file_name, encoding="utf-8") as f:
-            sch = parse(f.read())
+            sch = from_str(f.read())
 
         # loop through symbol instances and extract a tree for uuid to reference
         if hasattr(sch, "symbol_instances"):
@@ -287,7 +300,7 @@ class Project:
             if os.path.basename(sheet_file) not in self.fn_to_uuid:
                 with open(os.path.join(dir_name, sheet_file), encoding="utf-8") as f:
                     print(f"reading {sheet_file}")
-                    sub = parse(f.read())
+                    sub = from_str(f.read())
 
                 self._parse_sheet(sub, sheet_file)
 
@@ -311,10 +324,10 @@ class Project:
         parts += self._get_parts(top, f"/{top.uuid}")
 
         groups = []  # parts with the same footprint and value
-        uniquekeys = []  # part keys, footprint + value or MPN if set
+        unique_keys = []  # part keys, footprint + value or MPN if set
         for k, g in groupby(parts, key=Project._key_unique_part):
             groups.append(list(g))  # Store group iterator as a list
-            uniquekeys.append(k)
+            unique_keys.append(k)
 
         bom_parts = {}
 
@@ -330,12 +343,12 @@ class Project:
 
         bom = {
             "count_part": len(parts),
-            "count_unique": len(uniquekeys),
+            "count_unique": len(unique_keys),
             "parts": bom_parts,
             "sheets": self.sheets,
         }
 
-        print(json.dumps(bom, indent=4, sort_keys=True))
+        # print(json.dumps(bom, indent=4, sort_keys=True))
 
     def _get_parts(self, sch, path) -> list:
         self.sheets += 1
@@ -343,7 +356,7 @@ class Project:
         parts = list(
             filterfalse(
                 lambda sym: sym.property["Reference"][1].startswith('"#')
-                or sym.in_bom == False,
+                            or sym.in_bom == False,
                 sch.symbol,
             )
         )
@@ -358,12 +371,47 @@ class Project:
 
         return parts
 
+    def as_sheet(self) -> Expr:
+        """ as_sheet extracts all hierarchical labels and generates a new sheet object from them
+        """
 
-pro = Project("/home/elen/automated/upcu/mk1/mk1.kicad_sch")
+        labels = self.schematics[self.top].hierarchical_label
+        lbl_space = len(max(labels.keys(), key=len))
+
+        y = 0.0
+        x = 0.0
+
+        sheet = Expr("sheet",
+                     Expr("at", x, y),
+                     Expr("size", lbl_space * 1.27, (len(labels) + 2) * 1.27),
+                     Expr("fields_autoplaced"),
+                     from_str("(stroke (width 0) (type solid) (color 0 0 0 0))"),
+                     from_str("(fill (color 0 0 0 0.0000))"),
+                     Expr("uuid", uuid4()),
+                     Expr("property", '"Sheet name"', "TODO", Expr("id", 0),
+                          Expr("at", 0.0, 0.0, 0),
+                          from_str("(effects (font (size 1.27 1.27)) (justify left bottom))")),
+                     Expr("property", '"Sheet file"', self.file_name, Expr("id", 1), Expr("at", 0.0, 0.0, 0),
+                          from_str("(effects (font (size 1.27 1.27)) (justify left bottom))"))
+                     )
+        n = 0
+        for label in labels.values():
+            # build a new pin, (at x y angle)
+            n += 1
+            sheet += Expr("pin", label[0], label.shape[0], Expr("at", x, y + n * 1.27, 0),
+                          from_str("(effects (font (size 1.27 1.27)) (justify left))"),
+                          Expr("uuid", uuid4()))
+
+        return sheet
+
+
+pro = Project("example-module/example-module.kicad_sch")
 before = time.time()
 pro.parse()
 after = time.time()
-
-print(f"took {after-before}s to parse")
+print(f"took {after - before}s to parse")
 
 pro.metadata()
+pro.as_sheet()
+
+# pro.box()
