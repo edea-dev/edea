@@ -1,33 +1,28 @@
 """
-Blub
+it's a kicad parser! it's edea! it's the kicad parser and edea tooling!
+
+This contains a KiCad parser with a minimalistic approach that should hopefully be easy to use. There's a lot of code
+manipulating kicad data structures, so it's hopefully not too hard to pick up what it's doing.
+
+SPDX-License-Identifier: EUPL-1.2
 """
+from __future__ import annotations
+
 import os
 import re
-import time
 from collections import UserList
 from dataclasses import dataclass
 from itertools import filterfalse, groupby
 from operator import methodcaller
-from typing import OrderedDict, Tuple, Union
+from typing import Tuple, Union
 from uuid import uuid4
 
 Symbol = str
 Number = (int, float)
 Atom = (Symbol, Number)
 
-to_be_moved = [
-    "module",
-    "gr_text",
-    "gr_poly",
-    "gr_line",
-    "gr_arc",
-    "via",
-    "segment",
-    "dimension",
-    "gr_circle",
-    "gr_curve",
-    "arc",
-]
+to_be_moved = ["module", "gr_text", "gr_poly", "gr_line", "gr_arc", "via", "segment", "dimension", "gr_circle",
+               "gr_curve", "arc", ]
 
 movable_types = ["at", "xy", "start", "end", "center"]
 drawable_types = ["pin", "polyline", "rectangle"]
@@ -91,7 +86,7 @@ class Expr(UserList):
             else:
                 self._known_attrs.add(item.name)
 
-    def __getattr__(self, name) -> list | OrderedDict:
+    def __getattr__(self, name) -> list | dict:
         """
         make items from data callable via the attribute syntax
         this allows us to work with sub-expressions just like one would intuitively expect it
@@ -128,17 +123,15 @@ class Expr(UserList):
             return dict_items
         return items
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         """Overrides the default implementation"""
         if len(self.data) != 1:
-            raise NotImplementedError  # return super.__eq__(self, other)
+            raise NotImplementedError
 
         if other is True or other is False:
             return self[0] == "yes" and other
         if isinstance(other, Number):
             return self[0] == other.number
-
-        print(f"type: {type(other)}")
 
         return False
 
@@ -163,7 +156,7 @@ class Movable(Expr):
 @dataclass(init=False)
 class Drawable(Movable):
     """
-    Drawable is an object which can be converted to a SVG
+    Drawable is an object which can be converted to an SVG
     pin: line with text
     polyline: symbols drawn with line(s), e.g. the ground symbol
     rectangle: usually ic symbols
@@ -186,23 +179,18 @@ class Drawable(Movable):
             x_end = self.end[0]
             y_end = self.end[1]
             print(
-                f'<rect x="{x_start + at[0]}" y="{y_start + at[1]}" width="{x_start - x_end}" height="{y_start - y_end}" />'
-            )
+                f'<rect x="{x_start + at[0]}" y="{y_start + at[1]}" width="{x_start - x_end}" height="{y_start - y_end}" />')
         else:
             raise NotImplementedError(self.name)
 
 
-def tokenize(chars: str) -> list[str]:
-    """Convert a string of characters into a list of tokens."""
-    return TOKENIZE_EXPR.findall(chars)
-
-
 def from_str(program: str) -> Expr:
     """Parse KiCAD s-expr from a string"""
-    return read_from_tokens(tokenize(program), "")
+    tokens = TOKENIZE_EXPR.findall(program)
+    return from_tokens(tokens, "")
 
 
-def read_from_tokens(tokens: list, parent: str) -> Union[Expr, int, float, str]:
+def from_tokens(tokens: list, parent: str) -> Union[Expr, int, float, str]:
     """Read an expression from a sequence of tokens."""
     if len(tokens) == 0:
         raise SyntaxError("unexpected EOF")
@@ -221,7 +209,7 @@ def read_from_tokens(tokens: list, parent: str) -> Union[Expr, int, float, str]:
             expr = Expr(typ)
 
         while tokens[0] != ")":
-            expr.append(read_from_tokens(tokens, expr.name))
+            expr.append(from_tokens(tokens, expr.name))
         tokens.pop(0)  # remove ')'
 
         expr.parsed()
@@ -231,11 +219,7 @@ def read_from_tokens(tokens: list, parent: str) -> Union[Expr, int, float, str]:
     if token == ")":
         raise SyntaxError("unexpected )")
 
-    return atom(token)
-
-
-def atom(token: str) -> Atom:
-    """Numbers become numbers; every other token is a symbol."""
+    # Numbers become numbers, every other token is a symbol
     try:
         return int(token)
     except ValueError:
@@ -243,6 +227,75 @@ def atom(token: str) -> Atom:
             return float(token)
         except ValueError:
             return Symbol(token)
+
+
+class Schematic:
+    _sch: Expr
+    file_name: str
+    name: str
+
+    def __init__(self, sch: Expr, name: str, file_name: str):
+        self._sch = sch
+        self.name = name
+        self.file_name = file_name
+
+    def as_expr(self) -> Expr:
+        return self._sch
+
+    def to_sheet(self, sheet_name: str, file_name: str) -> Expr:
+        """ to_sheet extracts all hierarchical labels and generates a new sheet object from them
+        """
+
+        # TODO(ln): handle sub-schematics without labels
+        labels = self._sch.hierarchical_label
+        lbl_space = len(max(labels.keys(), key=len))
+
+        y = 0.0
+        x = 0.0
+
+        sheet = Expr("sheet", Expr("at", x, y), Expr("size", lbl_space * 1.27, (len(labels) + 2) * 1.27),
+                     Expr("fields_autoplaced"), from_str("(stroke (width 0) (type solid) (color 0 0 0 0))"),
+                     from_str("(fill (color 0 0 0 0.0000))"), Expr("uuid", uuid4()),
+                     Expr("property", '"Sheet name"', f'"{sheet_name}"', Expr("id", 0), Expr("at", 0.0, 0.0, 0),
+                          from_str("(effects (font (size 1.27 1.27)) (justify left bottom))")),
+                     Expr("property", '"Sheet file"', f'"{file_name}"', Expr("id", 1), Expr("at", 0.0, 0.0, 0),
+                          from_str("(effects (font (size 1.27 1.27)) (justify left bottom))")))
+        n = 0
+        for label in labels.values():
+            # build a new pin, (at x y angle)
+            n += 1
+            sheet.append(Expr("pin", label[0], label.shape[0], Expr("at", x, y + n * 1.27, 0),
+                              from_str("(effects (font (size 1.27 1.27)) (justify left))"), Expr("uuid", uuid4())))
+
+        return sheet
+
+    @staticmethod
+    def empty() -> Schematic:
+        """empty_schematic returns a minimal KiCad schematic
+        """
+        sch = Expr("kicad_sch", Expr("version", 20211123), Expr("generator", "edea"), Expr("uuid", uuid4()),
+                   Expr("paper", "A4"), Expr("lib_symbols"),
+                   Expr("sheet_instances", Expr("path", '"/"', Expr("page", '"1"'))))
+        return Schematic(sch, "", "")
+
+    def append(self, schematic: Schematic, name=""):
+        """
+        here's the problem: append needs the filename of the other schematic, but also a name which it should reference
+        this schematic by. i think we should take the file name from the file and make the name an optional parameter.
+        """
+        max_page: str
+        # find the max page number
+        sheet = schematic.to_sheet(schematic.name, name if name != "" else schematic.file_name)
+        for instance in self._sch.sheet_instances:
+            max_page = instance.page[0]
+
+        new_page = int(max_page[1:-1]) + 1
+
+        # append sheet and create a new instance
+        self._sch.append(sheet)
+        self._sch.sheet_instances.append(
+            Expr("path", f'"/{sheet.uuid}"', Expr("page", f'"{new_page}"')),
+        )
 
 
 class Project:
@@ -286,7 +339,7 @@ class Project:
     def _parse_sheet(self, sch: Expr, file_name: str):
         """recursively parse schematic sub-sheets"""
         uuid = sch.uuid[0]
-        self.schematics[uuid] = sch
+        self.schematics[uuid] = Schematic(sch)
         self.fn_to_uuid[os.path.basename(file_name)] = uuid
 
         dir_name = os.path.dirname(self.file_name)
@@ -319,7 +372,7 @@ class Project:
         """parse metadata from the schematic"""
         self.sheets = 0
         parts = []
-        top = self.schematics[self.top]
+        top = self.schematics[self.top].as_expr()
 
         parts += self._get_parts(top, f"/{top.uuid}")
 
@@ -341,77 +394,51 @@ class Project:
 
             bom_parts[sym.uuid[0]] = properties
 
-        bom = {
-            "count_part": len(parts),
-            "count_unique": len(unique_keys),
-            "parts": bom_parts,
-            "sheets": self.sheets,
-        }
+        bom = {"count_part": len(parts), "count_unique": len(unique_keys), "parts": bom_parts, "sheets": self.sheets, }
 
-        # print(json.dumps(bom, indent=4, sort_keys=True))
+        return bom
 
     def _get_parts(self, sch, path) -> list:
         self.sheets += 1
 
+        # don't trust the linter, it's telling lies here
         parts = list(
-            filterfalse(
-                lambda sym: sym.property["Reference"][1].startswith('"#')
-                            or sym.in_bom == False,
-                sch.symbol,
-            )
-        )
+            filterfalse(lambda sym: sym.property["Reference"][1].startswith('"#') or sym.in_bom == False, sch.symbol, ))
 
         # recurse sub-schematics
         if hasattr(sch, "sheet"):
             for sheet in sch.sheet:
                 prop = sheet.property
                 sheet_fn = prop["Sheet file"][1].strip('"')
-                sch = self.schematics[self.fn_to_uuid[sheet_fn]]
+                sch = self.schematics[self.fn_to_uuid[sheet_fn]].as_expr()
                 parts += self._get_parts(sch, f"{path}/{sch.uuid}")
 
         return parts
 
-    def as_sheet(self) -> Expr:
-        """ as_sheet extracts all hierarchical labels and generates a new sheet object from them
-        """
 
-        labels = self.schematics[self.top].hierarchical_label
-        lbl_space = len(max(labels.keys(), key=len))
+# pro = Project("example-module/example-module.kicad_sch")
+# pro = Project("/home/elen/automated/upcu/mk1/mk1.kicad_sch")
+# before = time.time()
+# pro.parse()
+# after = time.time()
+# print(f"took {after - before}s to parse")
 
-        y = 0.0
-        x = 0.0
-
-        sheet = Expr("sheet",
-                     Expr("at", x, y),
-                     Expr("size", lbl_space * 1.27, (len(labels) + 2) * 1.27),
-                     Expr("fields_autoplaced"),
-                     from_str("(stroke (width 0) (type solid) (color 0 0 0 0))"),
-                     from_str("(fill (color 0 0 0 0.0000))"),
-                     Expr("uuid", uuid4()),
-                     Expr("property", '"Sheet name"', "TODO", Expr("id", 0),
-                          Expr("at", 0.0, 0.0, 0),
-                          from_str("(effects (font (size 1.27 1.27)) (justify left bottom))")),
-                     Expr("property", '"Sheet file"', self.file_name, Expr("id", 1), Expr("at", 0.0, 0.0, 0),
-                          from_str("(effects (font (size 1.27 1.27)) (justify left bottom))"))
-                     )
-        n = 0
-        for label in labels.values():
-            # build a new pin, (at x y angle)
-            n += 1
-            sheet += Expr("pin", label[0], label.shape[0], Expr("at", x, y + n * 1.27, 0),
-                          from_str("(effects (font (size 1.27 1.27)) (justify left))"),
-                          Expr("uuid", uuid4()))
-
-        return sheet
-
-
-pro = Project("example-module/example-module.kicad_sch")
-before = time.time()
-pro.parse()
-after = time.time()
-print(f"took {after - before}s to parse")
-
-pro.metadata()
-pro.as_sheet()
+# pro.metadata()
+# pro.as_sheet()
 
 # pro.box()
+
+sch1 = Schematic.empty()
+sub_sch: Schematic
+
+with open("example-module/example-module.kicad_sch") as f:
+    sch = from_str(f.read())
+    sub_sch = Schematic(sch=sch, name="example_sub", file_name="example-module/example-module.kicad_sch")
+    # sub_sch.parse()
+
+sch1.append(sub_sch)
+
+with open("top.kicad_sch", "w") as f:
+    f.write(str(sch1.as_expr()))
+
+# TODO(ln): add a pin to the sub
