@@ -1,7 +1,7 @@
 """
 it's a kicad parser! it's edea! it's the kicad parser and edea tooling!
 
-This contains a KiCad parser with a minimalistic approach that should hopefully be easy to use. There's a lot of code
+This contains a KiCAD parser with a minimalistic approach that should hopefully be easy to use. There's a lot of code
 manipulating kicad data structures, so it's hopefully not too hard to pick up what it's doing.
 
 SPDX-License-Identifier: EUPL-1.2
@@ -13,9 +13,12 @@ import re
 from collections import UserList
 from dataclasses import dataclass
 from itertools import filterfalse, groupby
+from math import sin, cos, tau
 from operator import methodcaller
 from typing import Tuple, Union
 from uuid import uuid4
+
+import numpy as np
 
 Symbol = str
 Number = (int, float)
@@ -30,6 +33,147 @@ drawable_types = ["pin", "polyline", "rectangle"]
 lib_symbols = {}
 
 TOKENIZE_EXPR = re.compile("""("[^"]*"|\(|\)|"|[^\s()"]+)""")
+
+
+class BoundingBox:
+
+    def __init__(self, points):
+        """
+        Compute the upright 2D bounding box for a set of
+        2D coordinates in a (n,2) numpy array.
+        You can access the bbox using the
+        (min_x, max_x, min_y, max_y) members.
+        """
+        self.max_y = None
+        self.min_y = None
+        self.max_x = None
+        self.min_x = None
+        self._valid = None
+        self.reset()
+        self.envelop(points)
+
+    @staticmethod
+    def rot(xy, angle):
+        xi, yi = xy
+        si, co = sin(angle), cos(angle)
+        xo = xi * co + yi * si
+        yo = yi * co + xi * si
+        return [xo, yo]
+
+    def envelop(self, points):
+        """
+        Envelop the existing bounding box with new points
+        This might need optimization, we're doing some unnecessary
+        math for the sake of programmatic simplicity
+        """
+        if points is None or len(points) == 0:
+            return
+        if len(points.shape) != 2 or points.shape[1] != 2:
+            raise ValueError(
+                "Points must be a (n,2), array but it has shape {}".format(
+                    points.shape)
+            )
+        if self._valid:
+            extended = np.concatenate((points, self.corners))
+        else:
+            extended = points
+        self._valid = True
+        self.min_x, self.min_y = np.min(extended, axis=0)
+        self.max_x, self.max_y = np.max(extended, axis=0)
+
+    def translate(self, coords):
+        """
+        move the bounding box by [x y]
+        this is used for coordinate system transformation
+        """
+        if self._valid:
+            self.min_x += coords[0]
+            self.max_x += coords[0]
+            self.min_y += coords[1]
+            self.max_y += coords[1]
+
+    def reset(self):
+        self.min_x, self.min_y = float("inf") * np.array([1, 1], dtype=np.float64)
+        self.max_x, self.max_y = float("inf") * np.array([-1, -1], dtype=np.float64)
+        self._valid = False
+
+    def rotate(self, angle):
+        """
+        rotate the box around the origin. angle is in degrees
+        """
+        if self._valid:
+            c = self.corners
+            rotated = np.zeros((4, 2), dtype=np.float64)
+            angle = angle / tau
+            si, co = sin(angle), cos(angle)
+            for i in range(len(c)):
+                xo = c[i][0] * co + c[i][1] * si
+                yo = c[i][1] * co + c[i][0] * si
+                rotated[i] = [xo, yo]
+            self.reset()
+            self.envelop(rotated)
+
+    @property
+    def corners(self):
+        """
+        If the bounding box is empty, this returns None.
+        Returns all four corners of this rectangle in a [4][2] float64 array
+        """
+        if self._valid:
+            return np.array(
+                [
+                    [self.min_x, self.min_y],
+                    [self.min_x, self.max_y],
+                    [self.max_x, self.max_y],
+                    [self.max_x, self.min_y],
+                ],
+                dtype=np.float64,
+            )
+        else:
+            return None  # np.array([[]])
+
+    @property
+    def valid(self):
+        return self._valid
+
+    @property
+    def width(self):
+        """X-axis extent of the bounding box"""
+        if self._valid:
+            return self.max_x - self.min_x
+        else:
+            return 0
+
+    @property
+    def height(self):
+        """Y-axis extent of the bounding box"""
+        if self._valid:
+            return self.max_y - self.min_y
+        else:
+            return 0
+
+    @property
+    def area(self):
+        """width * height"""
+        return self.width * self.height
+
+    @property
+    def center(self):
+        """(x,y) center point of the bounding box"""
+        if self._valid:
+            return self.min_x + self.width / 2, self.min_y + self.height / 2
+        else:
+            return False  # I don't want to return 0,0
+
+    def __repr__(self):
+        if self._valid:
+            return (
+                "BoundingBox([{:03.2f}x, {:03.2f}y] -> [{:03.2f}X, {:03.2f}Y])".format(
+                    self.min_x, self.min_y, self.max_x, self.max_y
+                )
+            )
+        else:
+            return "BoundingBox empty"
 
 
 @dataclass
@@ -148,9 +292,68 @@ class Movable(Expr):
     """Movable is an object with a position"""
 
     def move_xy(self, x: float, y: float) -> None:
-        "move_xy adds the position offset x and y to the object"
+        """move_xy adds the position offset x and y to the object"""
         self.data[0] += x
         self.data[1] += y
+
+
+@dataclass(init=False)
+class Pad(Movable):
+    """Pad"""
+
+    @property
+    def corners(self):
+        """Returns a numpy array containing every corner [x,y]
+        """
+        if len(self.at) > 2:
+            angle = self.at[2] / tau
+        else:
+            angle = 0
+        origin = self.at[0:2]
+
+        if self.name in ["rect", "roundrect", "oval", "custom"]:
+            # TODO optimize this, this is called quite often
+
+            points = np.array([[1, 1], [1, -1], [-1, 1], [-1, -1]], dtype=np.float64)
+            if self[2] == "oval":
+                points = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
+            w = self.size[0] / 2
+            h = self.size[1] / 2
+            c = cos(angle)
+            s = sin(angle)
+            for i in range(len(points)):
+                points[i] = origin + points[i] * [(w * c + h * s), (h * c + w * s)]
+
+        elif self[2] == "circle":
+            points = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
+            r = self.size[0] / 2
+            for i in range(len(points)):
+                points[i] = origin + points[i] * [r, r]
+        else:
+            raise NotImplementedError("pad shape {} is not implemented".format(self[2]))
+
+        return points
+
+
+@dataclass(init=False)
+class Module(Movable):
+    """Module"""
+
+    @property
+    def bounding_box(self) -> BoundingBox:
+        if not hasattr(self, "pad"):
+            bb = BoundingBox([])
+        else:
+            bb = BoundingBox(self.pad[0].corners)
+
+        if len(self.pad) > 1:
+            for i in range(1, len(self.pad)):
+                bb.envelop(self.pad[i].corners)
+
+        if len(self.at) > 2:
+            bb.rotate(self.at[2])
+        bb.translate(self.at[0:2])
+        return bb
 
 
 @dataclass(init=False)
@@ -242,30 +445,34 @@ class Schematic:
     def as_expr(self) -> Expr:
         return self._sch
 
-    def to_sheet(self, sheet_name: str, file_name: str) -> Expr:
+    def to_sheet(self, sheet_name: str, file_name: str, pos_x=20.0, pos_y=20.0) -> Expr:
         """ to_sheet extracts all hierarchical labels and generates a new sheet object from them
         """
 
-        # TODO(ln): handle sub-schematics without labels
-        labels = self._sch.hierarchical_label
-        lbl_space = len(max(labels.keys(), key=len))
+        if hasattr(self._sch, "hierarchical_label"):
+            labels = self._sch.hierarchical_label
+        else:
+            labels = []
 
-        y = 0.0
-        x = 0.0
+        # width of the hierarchical sheet, length of longest pin name or min 5 chars wide
+        lbl_space = max(len(max(labels.keys(), key=len)), 4) + 1
+        width = lbl_space * 1.27
+        height = (len(labels) + 1) * 2.54
 
-        sheet = Expr("sheet", Expr("at", x, y), Expr("size", lbl_space * 1.27, (len(labels) + 2) * 1.27),
+        sheet = Expr("sheet", Expr("at", pos_x, pos_y), Expr("size", width, height),
                      Expr("fields_autoplaced"), from_str("(stroke (width 0) (type solid) (color 0 0 0 0))"),
                      from_str("(fill (color 0 0 0 0.0000))"), Expr("uuid", uuid4()),
-                     Expr("property", '"Sheet name"', f'"{sheet_name}"', Expr("id", 0), Expr("at", 0.0, 0.0, 0),
+                     Expr("property", '"Sheet name"', f'"{sheet_name}"', Expr("id", 0), Expr("at", pos_x, pos_y, 0),
                           from_str("(effects (font (size 1.27 1.27)) (justify left bottom))")),
-                     Expr("property", '"Sheet file"', f'"{file_name}"', Expr("id", 1), Expr("at", 0.0, 0.0, 0),
+                     Expr("property", '"Sheet file"', f'"{file_name}"', Expr("id", 1),
+                          Expr("at", pos_x, pos_y + height + 2.54, 0),
                           from_str("(effects (font (size 1.27 1.27)) (justify left bottom))")))
         n = 0
         for label in labels.values():
             # build a new pin, (at x y angle)
             n += 1
-            sheet.append(Expr("pin", label[0], label.shape[0], Expr("at", x, y + n * 1.27, 0),
-                              from_str("(effects (font (size 1.27 1.27)) (justify left))"), Expr("uuid", uuid4())))
+            sheet.append(Expr("pin", label[0], label.shape[0], Expr("at", pos_x, pos_y + n * 2.54, 0),
+                              from_str("(effects (font (size 1.27 1.27)) (justify right))"), Expr("uuid", uuid4())))
 
         return sheet
 
@@ -285,7 +492,7 @@ class Schematic:
         """
         max_page: str
         # find the max page number
-        sheet = schematic.to_sheet(schematic.name, name if name != "" else schematic.file_name)
+        sheet = schematic.to_sheet(name if name != "" else schematic.name, schematic.file_name)
         for instance in self._sch.sheet_instances:
             max_page = instance.page[0]
 
@@ -414,31 +621,3 @@ class Project:
                 parts += self._get_parts(sch, f"{path}/{sch.uuid}")
 
         return parts
-
-
-# pro = Project("example-module/example-module.kicad_sch")
-# pro = Project("/home/elen/automated/upcu/mk1/mk1.kicad_sch")
-# before = time.time()
-# pro.parse()
-# after = time.time()
-# print(f"took {after - before}s to parse")
-
-# pro.metadata()
-# pro.as_sheet()
-
-# pro.box()
-
-sch1 = Schematic.empty()
-sub_sch: Schematic
-
-with open("example-module/example-module.kicad_sch") as f:
-    sch = from_str(f.read())
-    sub_sch = Schematic(sch=sch, name="example_sub", file_name="example-module/example-module.kicad_sch")
-    # sub_sch.parse()
-
-sch1.append(sub_sch)
-
-with open("top.kicad_sch", "w") as f:
-    f.write(str(sch1.as_expr()))
-
-# TODO(ln): add a pin to the sub
