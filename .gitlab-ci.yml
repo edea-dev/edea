@@ -34,7 +34,7 @@ test:
 
 lint:
   script:
-    - poetry run pylint
+    - poetry run pylint src
 
 run:
   script:

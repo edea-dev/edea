@@ -15,6 +15,7 @@
 # python
 /venv
 /dist
+__pycache__
 
 # temp tools and files
 format.l
