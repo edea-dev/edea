@@ -229,7 +229,7 @@ class Expr(UserList):
             else:
                 self._known_attrs.add(item.name)
 
-    def __getattr__(self, name) -> list | dict:
+    def __getattr__(self, name) -> list | dict | str:
         """
         make items from data callable via the attribute syntax
         this allows us to work with sub-expressions just like one would intuitively expect it

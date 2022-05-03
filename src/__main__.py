@@ -20,15 +20,31 @@ parser.add_argument('projects', type=str, nargs='+',
 
 args = parser.parse_args()
 
-# pro = project("example-module/example-module.kicad_sch")
-# pro = project("/home/elen/automated/upcu/mk1/mk1.kicad_sch")
-# before = time.time()
-# pro.parse()
-# after = time.time()
-# print(f"took {after - before}s to parse")
+# what we need: schematic and pcb file, ideally find from kicad project file
+# we don't need to parse project json to get top level file names; the project name is always (?) the filename
+# of the top level schematic
 
-# pro.metadata()
-# pro.as_sheet()
+if args.extract_meta:
+    # parse the top-level schematic (and sub-schematics) plus the PCB file
+    # and output metadata about it
+    if len(args.projects) != 1:
+        raise Exception(f"need exactly one KiCad Project, found {len(args.projects)}")
+
+    project_path = args.projects[0]
+    if project_path.endswith('.kicad_pro'):
+        path, _ = os.path.splitext(project_path)
+        root_schematic = path + ".kicad_sch"
+    else:
+        if os.path.isdir(project_path):
+            path_lead, project_name = os.path.split(os.path.normpath(project_path))
+            root_schematic = os.path.join(project_path, project_name + '.kicad_sch')
+    pro = Project(root_schematic)
+    before = time()
+    pro.parse()
+    after = time()
+
+    metadata = pro.metadata()
+    metadata["parse_time"] = after - before
 
     print(json.dumps(metadata))
 
