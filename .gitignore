@@ -5,12 +5,10 @@
 .clj-kondo
 
 # kicad test files
-/*.kicad_pcb
-/*.kicad_prl
-/*.kicad_pro
-/*.kicad_sch
-/*.kicad_sym
-/fp-info-cache
+*.kicad_prl
+*.kicad_sym
+fp-info-cache
+/tests/**/*-backups
 
 # python
 /venv
