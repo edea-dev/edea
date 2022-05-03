@@ -1,4 +1,29 @@
-# here would be my tests, IF I HAD ANY
+"""
+Metadata extraction tests
+
+This takes ferret, a fairly complex project and verifies some basic facts about it.
+"""
+
+import os
+from time import time
+from edea import Project
+
+test_projects = {
+    "ferret": {
+        "count_part": 134,
+        "count_unique": 115
+    }
+}
+
+
+def get_path_to_test_project(project_name):
+    proj_path = ["kicad_projects", project_name, f"{project_name}.kicad_sch"]
+    test_folder_name = "tests"
+
+    if not os.getcwd().endswith(test_folder_name):
+        proj_path.insert(0, test_folder_name)
+    return os.path.join(*proj_path)
+
 
 class TestMetadata:
     def test_metadata_extraction_all_projects(self):

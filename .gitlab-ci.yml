@@ -17,13 +17,12 @@ cache:
 
 before_script:
   - python --version # For debugging
-  - apt install -y gcc # for numpy
   - pip install poetry
   - poetry install
 
 test:
   script:
-    - poetry run pytest
+    - poetry run pytest --cov=edea
 
 lint:
   script:
