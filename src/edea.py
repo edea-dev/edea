@@ -32,18 +32,17 @@ drawable_types = ["pin", "polyline", "rectangle"]
 
 lib_symbols = {}
 
-TOKENIZE_EXPR = re.compile("""("[^"]*"|\(|\)|"|[^\s()"]+)""")
+TOKENIZE_EXPR = re.compile("""("[^"]*"|\(|\)|"|[^\s()"]+)""")  # pylint: disable=W1401
 
 
 class BoundingBox:
-
+    """
+    BoundingBox for computing the upright 2D bounding box for a set of
+    2D coordinates in a (n,2) numpy array.
+    You can access the bbox using the
+    (min_x, max_x, min_y, max_y) members.
+    """
     def __init__(self, points):
-        """
-        Compute the upright 2D bounding box for a set of
-        2D coordinates in a (n,2) numpy array.
-        You can access the bbox using the
-        (min_x, max_x, min_y, max_y) members.
-        """
         self.max_y = None
         self.min_y = None
         self.max_x = None
@@ -53,12 +52,13 @@ class BoundingBox:
         self.envelop(points)
 
     @staticmethod
-    def rot(xy, angle):
-        xi, yi = xy
-        si, co = sin(angle), cos(angle)
-        xo = xi * co + yi * si
-        yo = yi * co + xi * si
-        return [xo, yo]
+    def rot(point, angle):
+        """rotate the point at xy by an angle"""
+        point_x, point_y = point
+        angle_sin, angle_cos = sin(angle), cos(angle)
+        x_out = point_x * angle_cos + point_y * angle_sin
+        y_out = point_y * angle_cos + point_x * angle_sin
+        return [x_out, y_out]
 
     def envelop(self, points):
         """
@@ -70,8 +70,7 @@ class BoundingBox:
             return
         if len(points.shape) != 2 or points.shape[1] != 2:
             raise ValueError(
-                "Points must be a (n,2), array but it has shape {}".format(
-                    points.shape)
+                f"Points must be a (n,2), array but it has shape {points.shape}"
             )
         if self._valid:
             extended = np.concatenate((points, self.corners))
@@ -93,6 +92,7 @@ class BoundingBox:
             self.max_y += coords[1]
 
     def reset(self):
+        """reset the BoundingBox"""
         self.min_x, self.min_y = float("inf") * np.array([1, 1], dtype=np.float64)
         self.max_x, self.max_y = float("inf") * np.array([-1, -1], dtype=np.float64)
         self._valid = False
@@ -102,14 +102,14 @@ class BoundingBox:
         rotate the box around the origin. angle is in degrees
         """
         if self._valid:
-            c = self.corners
+            corners = self.corners
             rotated = np.zeros((4, 2), dtype=np.float64)
             angle = angle / tau
-            si, co = sin(angle), cos(angle)
-            for i in range(len(c)):
-                xo = c[i][0] * co + c[i][1] * si
-                yo = c[i][1] * co + c[i][0] * si
-                rotated[i] = [xo, yo]
+            angle_sin, angle_cos = sin(angle), cos(angle)
+            for i in enumerate(corners):
+                x_out = corners[i][0] * angle_cos + corners[i][1] * angle_sin
+                y_out = corners[i][1] * angle_cos + corners[i][0] * angle_sin
+                rotated[i] = [x_out, y_out]
             self.reset()
             self.envelop(rotated)
 
@@ -129,11 +129,11 @@ class BoundingBox:
                 ],
                 dtype=np.float64,
             )
-        else:
-            return None  # np.array([[]])
+        return None  # np.array([[]])
 
     @property
     def valid(self):
+        """returns True if the BoundBox has been calculated yet"""
         return self._valid
 
     @property
@@ -141,16 +141,16 @@ class BoundingBox:
         """X-axis extent of the bounding box"""
         if self._valid:
             return self.max_x - self.min_x
-        else:
-            return 0
+
+        return 0
 
     @property
     def height(self):
         """Y-axis extent of the bounding box"""
         if self._valid:
             return self.max_y - self.min_y
-        else:
-            return 0
+
+        return 0
 
     @property
     def area(self):
@@ -162,18 +162,17 @@ class BoundingBox:
         """(x,y) center point of the bounding box"""
         if self._valid:
             return self.min_x + self.width / 2, self.min_y + self.height / 2
-        else:
-            return False  # I don't want to return 0,0
+
+        return False  # I don't want to return 0,0
 
     def __repr__(self):
-        if self._valid:
-            return (
-                "BoundingBox([{:03.2f}x, {:03.2f}y] -> [{:03.2f}X, {:03.2f}Y])".format(
-                    self.min_x, self.min_y, self.max_x, self.max_y
-                )
-            )
-        else:
-            return "BoundingBox empty"
+        if not self._valid:
+            return "boundingbox empty"
+
+        val = f"boundingbox([{self.min_x:03.2f}x, {self.min_y:03.2f}y] -> [{self.max_x:03.2f}x, {self.max_y:03.2f}y])"
+        return val
+
+
 
 
 @dataclass
@@ -242,7 +241,7 @@ class Expr(UserList):
 
         if name not in self._more_than_once:
             for item in self.data:
-                if type(item) is str:
+                if isinstance(item, str):
                     if item == name:
                         return item
                 elif item.name == name:
@@ -319,18 +318,18 @@ class Pad(Movable):
                 points = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
             w = self.size[0] / 2
             h = self.size[1] / 2
-            c = cos(angle)
-            s = sin(angle)
-            for i in range(len(points)):
-                points[i] = origin + points[i] * [(w * c + h * s), (h * c + w * s)]
+            angle_cos = cos(angle)
+            angle_sin = sin(angle)
+            for i in enumerate(points):
+                points[i] = origin + points[i] * [(w * angle_cos + h * angle_sin), (h * angle_cos + w * angle_sin)]
 
         elif self[2] == "circle":
             points = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
-            r = self.size[0] / 2
-            for i in range(len(points)):
-                points[i] = origin + points[i] * [r, r]
+            radius = self.size[0] / 2
+            for i in enumerate(points):
+                points[i] = origin + points[i] * [radius, radius]
         else:
-            raise NotImplementedError("pad shape {} is not implemented".format(self[2]))
+            raise NotImplementedError(f"pad shape {self[2]} is not implemented")
 
         return points
 
@@ -341,19 +340,20 @@ class Module(Movable):
 
     @property
     def bounding_box(self) -> BoundingBox:
+        """return the BoundingBox"""
         if not hasattr(self, "pad"):
-            bb = BoundingBox([])
+            box = BoundingBox([])
         else:
-            bb = BoundingBox(self.pad[0].corners)
+            box = BoundingBox(self.pad[0].corners)
 
         if len(self.pad) > 1:
             for i in range(1, len(self.pad)):
-                bb.envelop(self.pad[i].corners)
+                box.envelop(self.pad[i].corners)
 
         if len(self.at) > 2:
-            bb.rotate(self.at[2])
-        bb.translate(self.at[0:2])
-        return bb
+            box.rotate(self.at[2])
+        box.translate(self.at[0:2])
+        return box
 
 
 @dataclass(init=False)
@@ -365,24 +365,24 @@ class Drawable(Movable):
     rectangle: usually ic symbols
     """
 
-    def draw(self, at: Tuple[float, float]):
+    def draw(self, position: Tuple[float, float]):
         """draw the shape with the given offset"""
         if self.name == "pin":
             # raise NotImplementedError(self.name)
             pass
         elif self.name == "polyline":
-            s = '<polyline points="'
-            for pt in self.data[0]:
-                s += f"{pt.data[0]},{pt.data[1]} "
+            frag = '<polyline points="'
+            for point in self.data[0]:
+                frag += f"{point.data[0]},{point.data[1]} "
             # TODO: stroke and fill
-            print(f'{s}" />')
+            print(f'{frag}" />')
         elif self.name == "rectangle":
             x_start = self.start[0]
             y_start = self.start[1]
             x_end = self.end[0]
             y_end = self.end[1]
             print(
-                f'<rect x="{x_start + at[0]}" y="{y_start + at[1]}" width="{x_start - x_end}" height="{y_start - y_end}" />')
+                f'<rect x="{x_start + position[0]}" y="{y_start + position[1]}" width="{x_start - x_end}" height="{y_start - y_end}" />')
         else:
             raise NotImplementedError(self.name)
 
@@ -433,6 +433,9 @@ def from_tokens(tokens: list, parent: str) -> Union[Expr, int, float, str]:
 
 
 class Schematic:
+    """ Schematic
+    Representation of a kicad schematic
+    """
     _sch: Expr
     file_name: str
     name: str
@@ -443,6 +446,7 @@ class Schematic:
         self.file_name = file_name
 
     def as_expr(self) -> Expr:
+        """ return the schematic as an Expr """
         return self._sch
 
     def to_sheet(self, sheet_name: str, file_name: str, pos_x=20.0, pos_y=20.0) -> Expr:
@@ -467,11 +471,11 @@ class Schematic:
                      Expr("property", '"Sheet file"', f'"{file_name}"', Expr("id", 1),
                           Expr("at", pos_x, pos_y + height + 2.54, 0),
                           from_str("(effects (font (size 1.27 1.27)) (justify left bottom))")))
-        n = 0
+        i = 0
         for label in labels.values():
             # build a new pin, (at x y angle)
-            n += 1
-            sheet.append(Expr("pin", label[0], label.shape[0], Expr("at", pos_x, pos_y + n * 2.54, 0),
+            i += 1
+            sheet.append(Expr("pin", label[0], label.shape[0], Expr("at", pos_x, pos_y + i * 2.54, 0),
                               from_str("(effects (font (size 1.27 1.27)) (justify right))"), Expr("uuid", uuid4())))
 
         return sheet
@@ -521,8 +525,8 @@ class Project:
 
     def parse(self):
         """parse the base schematic"""
-        with open(self.file_name, encoding="utf-8") as f:
-            sch = from_str(f.read())
+        with open(self.file_name, encoding="utf-8") as sch_file:
+            sch = from_str(sch_file.read())
 
         # loop through symbol instances and extract a tree for uuid to reference
         if hasattr(sch, "symbol_instances"):
@@ -546,7 +550,7 @@ class Project:
     def _parse_sheet(self, sch: Expr, file_name: str):
         """recursively parse schematic sub-sheets"""
         uuid = sch.uuid[0]
-        self.schematics[uuid] = Schematic(sch)
+        self.schematics[uuid] = Schematic(sch, "", file_name)
         self.fn_to_uuid[os.path.basename(file_name)] = uuid
 
         dir_name = os.path.dirname(self.file_name)
@@ -558,9 +562,9 @@ class Project:
             prop = sheet.property
             sheet_file = prop["Sheet file"][1].strip('"')
             if os.path.basename(sheet_file) not in self.fn_to_uuid:
-                with open(os.path.join(dir_name, sheet_file), encoding="utf-8") as f:
+                with open(os.path.join(dir_name, sheet_file), encoding="utf-8") as sch_file:
                     print(f"reading {sheet_file}")
-                    sub = from_str(f.read())
+                    sub = from_str(sch_file.read())
 
                 self._parse_sheet(sub, sheet_file)
 
@@ -610,7 +614,7 @@ class Project:
 
         # don't trust the linter, it's telling lies here
         parts = list(
-            filterfalse(lambda sym: sym.property["Reference"][1].startswith('"#') or sym.in_bom == False, sch.symbol, ))
+            filterfalse(lambda sym: sym.property["Reference"][1].startswith('"#') or sym.in_bom is False, sch.symbol, ))
 
         # recurse sub-schematics
         if hasattr(sch, "sheet"):

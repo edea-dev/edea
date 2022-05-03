@@ -1,11 +1,3 @@
-# gitlab sast stuff
-stages:
-  - test
-sast:
-  stage: test
-include:
-  - template: Security/SAST.gitlab-ci.yml
-
 image: python:3.10
 
 # Change pip's cache directory to be inside the project directory since we can
@@ -36,6 +28,10 @@ test:
 lint:
   script:
     - poetry run pylint src
+
+bandit:
+  script:
+    - poetry run bandit -r src
 
 run:
   script:
