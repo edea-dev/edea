@@ -32,7 +32,7 @@ drawable_types = ["pin", "polyline", "rectangle"]
 
 lib_symbols = {}
 
-TOKENIZE_EXPR = re.compile("""("[^"]*"|\(|\)|"|[^\s()"]+)""")  # pylint: disable=W1401
+TOKENIZE_EXPR = re.compile(r'("[^"]*"|\(|\)|"|[^\s()"]+)')
 
 
 class BoundingBox:
@@ -455,11 +455,14 @@ class Schematic:
 
         if hasattr(self._sch, "hierarchical_label"):
             labels = self._sch.hierarchical_label
+            len_longest_label =len(max(labels.keys(), key=len))
         else:
-            labels = []
+            len_longest_label = 0
+            labels = {}
 
         # width of the hierarchical sheet, length of longest pin name or min 5 chars wide
-        lbl_space = max(len(max(labels.keys(), key=len)), 4) + 1
+
+        lbl_space = max(len_longest_label, 4) + 1
         width = lbl_space * 1.27
         height = (len(labels) + 1) * 2.54
 
