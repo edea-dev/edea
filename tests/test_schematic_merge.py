@@ -1,6 +1,12 @@
+"""
+Test schematic merging with a few example projects
+
+SPDX-License-Identifier: EUPL-1.2
+"""
+
 import os
 
-from edea import Schematic, from_str
+from src.edea import Schematic, from_str
 
 test_projects = {
     "3v3ldo": {},

@@ -1,10 +1,15 @@
+"""
+edea command line tool
+
+SPDX-License-Identifier: EUPL-1.2
+"""
 import argparse
 import json
 import os
 from time import time
 
 from edea import Schematic, Project
-from edea import from_str
+from src.parser import from_str
 
 parser = argparse.ArgumentParser(description='Tool to parse, render, and merge KiCad projects.')
 pgroup = parser.add_mutually_exclusive_group()

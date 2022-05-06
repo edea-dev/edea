@@ -2,11 +2,14 @@
 Metadata extraction tests
 
 This takes ferret, a fairly complex project and verifies some basic facts about it.
+
+SPDX-License-Identifier: EUPL-1.2
 """
 
 import os
 from time import time
-from edea import Project
+
+from src.edea import Project
 
 test_projects = {
     "ferret": {
