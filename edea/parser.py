@@ -14,7 +14,7 @@ from typing import Tuple, Union
 
 import numpy as np
 
-from src.bbox import BoundingBox
+from .bbox import BoundingBox
 
 Symbol = str
 Number = (int, float)

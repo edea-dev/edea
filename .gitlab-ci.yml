@@ -26,11 +26,11 @@ test:
 
 lint:
   script:
-    - poetry run pylint src
+    - poetry run pylint edea
 
 bandit:
   script:
-    - poetry run bandit -r src
+    - poetry run bandit -r edea
 
 #publish:
 #  script:

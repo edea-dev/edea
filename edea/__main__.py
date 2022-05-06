@@ -8,8 +8,8 @@ import json
 import os
 from time import time
 
-from edea import Schematic, Project
-from src.parser import from_str
+from .edea import Schematic, Project
+from .parser import from_str
 
 parser = argparse.ArgumentParser(description='Tool to parse, render, and merge KiCad projects.')
 pgroup = parser.add_mutually_exclusive_group()

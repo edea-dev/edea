@@ -6,7 +6,8 @@ SPDX-License-Identifier: EUPL-1.2
 
 import os
 
-from src.edea import Schematic, from_str
+from edea.edea import Schematic
+from edea.parser import from_str
 
 test_projects = {
     "3v3ldo": {},

@@ -9,7 +9,7 @@ SPDX-License-Identifier: EUPL-1.2
 import os
 from time import time
 
-from src.edea import Project
+from edea.edea import Project
 
 test_projects = {
     "ferret": {
