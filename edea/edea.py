@@ -10,8 +10,12 @@ from __future__ import annotations
 
 import os
 from itertools import filterfalse, groupby
+from typing import Dict
 from uuid import uuid4
 
+import numpy as np
+
+from .bbox import BoundingBox
 from .parser import Expr, from_str
 
 
@@ -32,7 +36,7 @@ class Schematic:
         """ return the schematic as an Expr """
         return self._sch
 
-    def to_sheet(self, sheet_name: str, file_name: str, pos_x=20.0, pos_y=20.0) -> Expr:
+    def to_sheet(self, sheet_name: str, file_name: str, pos_x=20.0, pos_y=20.0) -> (BoundingBox, Expr):
         """ to_sheet extracts all hierarchical labels and generates a new sheet object from them
         """
 
@@ -45,9 +49,12 @@ class Schematic:
 
         # width of the hierarchical sheet, length of longest pin name or min 5 chars wide
 
-        lbl_space = max(len_longest_label, 4) + 1
+        lbl_space = max(len_longest_label, 4) + 2
         width = lbl_space * 1.27
         height = (len(labels) + 1) * 2.54
+
+        # build a bounding box so that the next sheet can be placed properly
+        box = BoundingBox(np.array([[pos_x, pos_y], [pos_x + height, pos_y + width]]))
 
         sheet = Expr("sheet", Expr("at", pos_x, pos_y), Expr("size", width, height),
                      Expr("fields_autoplaced"), from_str("(stroke (width 0) (type solid) (color 0 0 0 0))"),
@@ -64,7 +71,7 @@ class Schematic:
             sheet.append(Expr("pin", label[0], label.shape[0], Expr("at", pos_x, pos_y + i * 2.54, 0),
                               from_str("(effects (font (size 1.27 1.27)) (justify right))"), Expr("uuid", uuid4())))
 
-        return sheet
+        return (box, sheet)
 
     @staticmethod
     def empty() -> Schematic:
@@ -75,24 +82,38 @@ class Schematic:
                    Expr("sheet_instances", Expr("path", '"/"', Expr("page", '"1"'))))
         return Schematic(sch, "", "")
 
-    def append(self, schematic: Schematic, name=""):
+    def append(self, schematics: Dict[str, Schematic]):
         """
         here's the problem: append needs the filename of the other schematic, but also a name which it should reference
         this schematic by. i think we should take the file name from the file and make the name an optional parameter.
         """
-        max_page: str
-        # find the max page number
-        sheet = schematic.to_sheet(name if name != "" else schematic.name, schematic.file_name)
-        for instance in self._sch.sheet_instances:
-            max_page = instance.page[0]
+        last_x = 20.0  # where to place the first sheet
+        last_y = 20.0
+        max_height = 0.0
 
-        new_page = int(max_page[1:-1]) + 1
+        for name, schematic in schematics.items():
+            max_page: str
+            # find the max page number
+            box, sheet = schematic.to_sheet(name, schematic.file_name, pos_x=last_x, pos_y=last_y)
 
-        # append sheet and create a new instance
-        self._sch.append(sheet)
-        self._sch.sheet_instances.append(
-            Expr("path", f'"/{sheet.uuid}"', Expr("page", f'"{new_page}"')),
-        )
+            last_x += box.width + 20.0  # update where the next sheet should go
+            max_height = max(max_height, box.height)
+
+            # wrap to next row if there's too many sheets
+            if last_x > 270.0:
+                last_x = 20.0
+                last_y += max_height + 20.0
+
+            for instance in self._sch.sheet_instances:
+                max_page = instance.page[0]
+
+            new_page = int(max_page[1:-1]) + 1
+
+            # append sheet and create a new instance
+            self._sch.append(sheet)
+            self._sch.sheet_instances.append(
+                Expr("path", f'"/{sheet.uuid}"', Expr("page", f'"{new_page}"')),
+            )
 
 
 class Project:

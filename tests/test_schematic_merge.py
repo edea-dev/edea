@@ -34,6 +34,6 @@ class TestSchematicMerge:
 
             with open(path) as f:
                 sch = Schematic(from_str(f.read()), proj_name, f"{proj_name}.kicad_sch")
-                target_schematic.append(sch)
+                target_schematic.append({proj_name: sch})
 
         assert str(target_schematic.as_expr()) != ""

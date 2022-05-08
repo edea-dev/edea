@@ -12,6 +12,7 @@ import sys
 from logging import getLogger
 from string import Template
 from time import time
+from typing import Dict
 
 from .edea import Schematic, Project
 from .kicad_files import empty_project
@@ -105,17 +106,25 @@ elif args.merge:
                 {"project_name": project_name, "name": f"{project_name} {len(files[project_path]) + 1}"},
             )
 
+    parsed_schematics: Dict[str, Schematic] = {}
+
     # now iterate all the (renamed) instances of the projects
     for project_path, obj in files.items():
         log.debug(f"merging schematic: {project_path} {obj}")
-        for instance in obj:
-            root_schematic = os.path.join(project_path, instance["project_name"] + '.kicad_sch')
 
-            with open(root_schematic, encoding="utf-8") as f:
-                sch = Schematic(from_str(f.read()), instance["name"], f"{instance['project_name']}.kicad_sch")
-                target_schematic.append(sch)
+        # parse the schematic once, append as many times as needed
+        root_schematic = os.path.join(project_path, obj[0]["project_name"] + '.kicad_sch')
+        with open(root_schematic, encoding="utf-8") as f:
+            expr = from_str(f.read())
 
-            # TODO: merge PCB too
+            for instance in obj:
+                name = instance["name"]
+                project_name = instance['project_name']
+                parsed_schematics[name] = Schematic(expr, name, f"{project_name}.kicad_sch")
+
+    target_schematic.append(parsed_schematics)
+
+    # TODO: merge PCB too
 
     # write the resulting schematic
     with open(f"{os.path.join(output_path, output_name)}.kicad_sch", "w", encoding="utf-8") as f:
