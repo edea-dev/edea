@@ -47,9 +47,10 @@ class Schematic:
             len_longest_label = 0
             labels = {}
 
-        # width of the hierarchical sheet, length of longest pin name or min 5 chars wide
-
+        # width of the hierarchical sheet, length of the longest pin name or min 4 chars wide plus one spacing on each
+        # side.
         lbl_space = max(len_longest_label, 4) + 2
+
         width = lbl_space * 1.27
         height = (len(labels) + 1) * 2.54
 

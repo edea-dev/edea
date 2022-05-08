@@ -52,7 +52,7 @@ if args.extract_meta:
         path_lead, project_name = os.path.split(os.path.normpath(project_path))
         root_schematic = os.path.join(project_path, project_name + '.kicad_sch')
     else:
-        log.error("Please provide a KiCad project directory or project file")
+        log.error("No KiCad project directory or project file provided")
         sys.exit(22)  # invalid argument
 
     pro = Project(root_schematic)
