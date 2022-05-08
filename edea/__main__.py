@@ -4,11 +4,17 @@ edea command line tool
 SPDX-License-Identifier: EUPL-1.2
 """
 import argparse
+import glob
 import json
 import os
+import shutil
+import sys
+from logging import getLogger
+from string import Template
 from time import time
 
 from .edea import Schematic, Project
+from .kicad_files import empty_project
 from .parser import from_str
 
 parser = argparse.ArgumentParser(description='Tool to parse, render, and merge KiCad projects.')
@@ -24,6 +30,8 @@ parser.add_argument('projects', type=str, nargs='+',
 
 args = parser.parse_args()
 
+log = getLogger()
+
 # what we need: schematic and pcb file, ideally find from kicad project file
 # we don't need to parse project json to get top level file names; the project name is always (?) the filename
 # of the top level schematic
@@ -32,7 +40,8 @@ if args.extract_meta:
     # parse the top-level schematic (and sub-schematics) plus the PCB file
     # and output metadata about it
     if len(args.projects) != 1:
-        raise Exception(f"need exactly one KiCad Project, found {len(args.projects)}")
+        log.error(f"need exactly one KiCad Project, found {len(args.projects)}")
+        sys.exit(7)  # argument list too long
 
     project_path = args.projects[0]
     if project_path.endswith('.kicad_pro'):
@@ -42,7 +51,8 @@ if args.extract_meta:
         path_lead, project_name = os.path.split(os.path.normpath(project_path))
         root_schematic = os.path.join(project_path, project_name + '.kicad_sch')
     else:
-        raise Exception("Please provide a KiCad project directory or project file")
+        log.error("Please provide a KiCad project directory or project file")
+        sys.exit(22)  # invalid argument
 
     pro = Project(root_schematic)
     before = time()
@@ -54,13 +64,23 @@ if args.extract_meta:
 
     print(json.dumps(metadata))
 
-else:
-    # not a metadata dump operation
+elif args.merge:
+    if not args.output:
+        log.error("output needs to be specified")
+        sys.exit(22)  # invalid argument
+
+    if os.path.isdir(args.output):
+        _, output_name = os.path.split(os.path.normpath(args.output))
+        output_path = args.output
+    else:
+        log.error(f'output path "{args.output}" is not a directory')
+        sys.exit(20)  # not a directory
+
     files = {}
     target_schematic = Schematic.empty()
 
     for path in args.projects:
-        # TODO: sort this mess out
+        # detect whether it points to a project file or a project directory
         if path.endswith('.kicad_pro'):
             path_lead, _ = os.path.splitext(path)
             project_name = os.path.basename(path_lead)
@@ -69,7 +89,8 @@ else:
             _, project_name = os.path.split(os.path.normpath(path))
             project_path = path
         else:
-            raise Exception("please specify a path to a KiCad project or the .kicad_pro file")
+            log.error(f"{path} doesn't point to a kicad project file or kicad project directory")
+            sys.exit(2)  # no such file or directory
 
         if project_path not in files:
             files[project_path] = [{"project_name": project_name, "name": project_name}]
@@ -86,17 +107,34 @@ else:
 
     # now iterate all the (renamed) instances of the projects
     for project_path, obj in files.items():
+        log.debug(f"merging schematic: {project_path} {obj}")
         for instance in obj:
             root_schematic = os.path.join(project_path, instance["project_name"] + '.kicad_sch')
 
             with open(root_schematic, encoding="utf-8") as f:
-                sch = Schematic(from_str(f.read()), instance["project_name"], f"{instance['project_name']}.kicad_sch")
+                sch = Schematic(from_str(f.read()), instance["name"], f"{instance['project_name']}.kicad_sch")
                 target_schematic.append(sch)
 
             # TODO: merge PCB too
 
-    # dump the resulting schematic
-    with open("top.kicad_sch", "w", encoding="utf-8") as f:
+    # write the resulting schematic
+    with open(f"{os.path.join(output_path, output_name)}.kicad_sch", "w", encoding="utf-8") as f:
         f.write(str(target_schematic.as_expr()))
 
-    # todo(ln): add a pin to the sub
+    # copy over all the schematics from the modules
+    for project_path, obj in files.items():
+        instance = obj[0]
+        files = glob.iglob(os.path.join(project_path, "*.kicad_sch"))
+        for file in files:
+            if os.path.isfile(file):
+                shutil.copy2(file, output_path)
+
+    # TODO: write merged PCB file to the output
+
+    # generate project file
+    with open(f"{os.path.join(output_path, output_name)}.kicad_pro", "w", encoding="utf-8") as f:
+        s = Template(empty_project)
+        f.write(s.substitute(project_name=output_name))
+else:
+    log.error("only merge and metadata extraction are implemented for now")
+    sys.exit(1)
