@@ -18,6 +18,5 @@ __pycache__
 
 # temp tools and files
 format.l
-*.svg
 /empty-module
 /example-module
