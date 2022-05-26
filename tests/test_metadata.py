@@ -19,8 +19,8 @@ test_projects = {
 }
 
 
-def get_path_to_test_project(project_name):
-    proj_path = ["kicad_projects", project_name, f"{project_name}.kicad_sch"]
+def get_path_to_test_project(project_name, ext="kicad_sch"):
+    proj_path = ["kicad_projects", project_name, f"{project_name}.{ext}"]
     test_folder_name = "tests"
 
     if not os.getcwd().endswith(test_folder_name):

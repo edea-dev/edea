@@ -5,7 +5,14 @@ import sys
 from time import time
 
 from edea.parser import from_str
+from tests.test_metadata import get_path_to_test_project
 
+test_projects = {
+    "ferret": {
+        "parse_time": 1.0,
+        "total_mem": 38.5
+    }
+}
 
 # https://stackoverflow.com/a/53705610
 def get_obj_size(obj):
@@ -35,17 +42,18 @@ def get_obj_size(obj):
 
 class TestMetadata:
     def test_mem_use(self):
-        with open("kicad_projects/ferret/ferret.kicad_pcb") as f:
-            s = f.read()
-            before = time()
-            pcb = from_str(s)
-            after = time()
+        for proj_name, context in test_projects.items():
+            with open(get_path_to_test_project(proj_name, "kicad_pcb")) as f:
+                s = f.read()
+                before = time()
+                pcb = from_str(s)
+                after = time()
 
-        parse_time = after - before
+            parse_time = after - before
 
-        total = float(get_obj_size(pcb)) / (1024 * 1024)
+            total_mem = float(get_obj_size(pcb)) / (1024 * 1024)
 
-        print(f"parsing took {parse_time:.2f}s with {total:.2f}MiB of memory")
-        # locally it takes 0.34s and 38MiB to parse the test file
-        assert parse_time > 1.0
-        assert total > 40.0
+            print(f"parsing took {parse_time:.2f}s with {total_mem:.2f}MiB of memory")
+            # locally it takes 0.34s and 38MiB to parse the test file
+            assert parse_time < context["parse_time"]
+            assert total_mem < context["total_mem"]
