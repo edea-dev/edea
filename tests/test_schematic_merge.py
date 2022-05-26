@@ -4,25 +4,11 @@ Test schematic merging with a few example projects
 SPDX-License-Identifier: EUPL-1.2
 """
 
-import os
-
 from edea.edea import Schematic
 from edea.parser import from_str
+from tests.test_metadata import get_path_to_test_project
 
-test_projects = {
-    "3v3ldo": {},
-    "MP2451": {},
-    "STM32F072CBU6": {}
-}
-
-
-def get_path_to_test_project(project_name):
-    proj_path = ["kicad_projects", project_name, f"{project_name}.kicad_sch"]
-    test_folder_name = "tests"
-
-    if not os.getcwd().endswith(test_folder_name):
-        proj_path.insert(0, test_folder_name)
-    return os.path.join(*proj_path)
+test_projects = {"3v3ldo": {}, "MP2451": {}, "STM32F072CBU6": {}}
 
 
 class TestSchematicMerge:

@@ -30,6 +30,8 @@ TOKENIZE_EXPR = re.compile(r'("[^"]*"|\(|\)|"|[^\s()"]+)')
 @dataclass
 class Expr(UserList):
     """Expr lisp-y kicad expressions"""
+    __slots__ = ("name", "data", "_more_than_once", "_known_attrs")
+
     name: str
     data: list
 
@@ -71,6 +73,7 @@ class Expr(UserList):
 
     def parsed(self):
         """subclasses can parse additional stuff out of data now"""
+        # TODO: currently modifying the object and accessing fields again is not handled
         for item in self.data:
             if not isinstance(item, Expr):
                 continue
@@ -242,18 +245,21 @@ class Drawable(Movable):
 def from_str(program: str) -> Expr:
     """Parse KiCAD s-expr from a string"""
     tokens = TOKENIZE_EXPR.findall(program)
-    return from_tokens(tokens, "")
+    _, expr = from_tokens(tokens, 0, "")
+    return expr
 
 
-def from_tokens(tokens: list, parent: str) -> Union[Expr, int, float, str]:
+def from_tokens(tokens: list, index: int, parent: str) -> Tuple[int, Union[Expr, int, float, str]]:
     """Read an expression from a sequence of tokens."""
-    if len(tokens) == 0:
+    if len(tokens) == index:
         raise SyntaxError("unexpected EOF")
-    token = tokens.pop(0)
+    token = tokens[index]
+    index += 1
 
     if token == "(":
         expr: Expr
-        typ = tokens.pop(0)
+        typ = tokens[index]
+        index += 1
 
         # TODO: handle more types here
         if typ in movable_types and parent in to_be_moved:
@@ -263,22 +269,23 @@ def from_tokens(tokens: list, parent: str) -> Union[Expr, int, float, str]:
         else:
             expr = Expr(typ)
 
-        while tokens[0] != ")":
-            expr.append(from_tokens(tokens, expr.name))
-        tokens.pop(0)  # remove ')'
+        while tokens[index] != ")":
+            index, sub_expr = from_tokens(tokens, index, expr.name)
+            expr.append(sub_expr)
+        index += 1  # remove ')'
 
         expr.parsed()
 
-        return expr
+        return (index, expr)
 
     if token == ")":
         raise SyntaxError("unexpected )")
 
     # Numbers become numbers, every other token is a symbol
     try:
-        return int(token)
+        return (index, int(token))
     except ValueError:
         try:
-            return float(token)
+            return (index, float(token))
         except ValueError:
-            return Symbol(token)
+            return (index, Symbol(token))
