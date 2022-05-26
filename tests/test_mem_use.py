@@ -9,7 +9,7 @@ from tests.test_metadata import get_path_to_test_project
 
 test_projects = {
     "ferret": {
-        "parse_time": 1.0,
+        "parse_time": 2.0, # gitlab ci runner is really slow
         "total_mem": 38.5
     }
 }
