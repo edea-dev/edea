@@ -40,7 +40,7 @@ def get_obj_size(obj):
     return sz
 
 
-class TestMetadata:
+class TestMemoryUse:
     def test_mem_use(self):
         for proj_name, context in test_projects.items():
             with open(get_path_to_test_project(proj_name, "kicad_pcb")) as f:

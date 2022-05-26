@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import os
 from itertools import filterfalse, groupby
+from operator import methodcaller
 from typing import Dict
 from uuid import uuid4
 
 import numpy as np
 
 from .bbox import BoundingBox
-from .parser import Expr, from_str
+from .parser import Expr, from_str, Pad
 
 
 class Schematic:
@@ -115,6 +116,28 @@ class Schematic:
             self._sch.sheet_instances.append(
                 Expr("path", f'"/{sheet.uuid}"', Expr("page", f'"{new_page}"')),
             )
+
+
+class PCB:
+    """ PCB
+    Representation of a kicad PCB
+    """
+    _pcb: Expr
+    file_name: str
+    name: str
+
+    def __init__(self, pcb: Expr, name: str, file_name: str):
+        self._pcb = pcb
+        self.name = name
+        self.file_name = file_name
+
+    def as_expr(self) -> Expr:
+        """ return the schematic as an Expr """
+        return self._pcb
+
+    def bounding_box(self):
+        all_corners = self._pcb.apply(Pad, methodcaller("corners"))
+        print(all_corners)
 
 
 class Project:

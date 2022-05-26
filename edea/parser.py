@@ -57,19 +57,31 @@ class Expr(UserList):
         sub = " ".join(map(methodcaller("__str__"), self.data))
         return f"({self.name} {sub})"
 
-    def apply(self, cls, func) -> None:
+    def apply(self, cls, func) -> list | None:
         """
         call func on all objects in data recursively which match the type
 
         to call an instance method, just use e.g. v.apply(Pad, methodcaller("move_xy", x, y))
         """
+        vals = []
+        ret = None
+
         if isinstance(self, cls):
-            func(self)
+            ret = func(self)
+            if ret is not None:
+                vals.append(ret)
 
         if len(self.data) > 0:
             for item in self.data:
                 if isinstance(item, Expr):
-                    item.apply(cls, func)
+                    ret = item.apply(cls, func)
+                    if ret is not None:
+                        vals.append(ret)
+
+        if len(vals) == 0:
+            return None
+        return vals
+
 
     def parsed(self):
         """subclasses can parse additional stuff out of data now"""
@@ -155,7 +167,6 @@ class Movable(Expr):
 class Pad(Movable):
     """Pad"""
 
-    @property
     def corners(self):
         """Returns a numpy array containing every corner [x,y]
         """
@@ -163,9 +174,10 @@ class Pad(Movable):
             angle = self.at[2] / tau
         else:
             angle = 0
-        origin = self.at[0:2]
+        origin = self.at.data[0:2] # in this case we explicitly need to access the data list because of the range op
+                                   # otherwise it would return a list of Expr
 
-        if self.name in ["rect", "roundrect", "oval", "custom"]:
+        if self[2] in ["rect", "roundrect", "oval", "custom"]:
             # TODO optimize this, this is called quite often
 
             points = np.array([[1, 1], [1, -1], [-1, 1], [-1, -1]], dtype=np.float64)
@@ -175,13 +187,13 @@ class Pad(Movable):
             h = self.size[1] / 2
             angle_cos = cos(angle)
             angle_sin = sin(angle)
-            for i in enumerate(points):
+            for i, _ in enumerate(points):
                 points[i] = origin + points[i] * [(w * angle_cos + h * angle_sin), (h * angle_cos + w * angle_sin)]
 
         elif self[2] == "circle":
             points = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
             radius = self.size[0] / 2
-            for i in enumerate(points):
+            for i, _ in enumerate(points):
                 points[i] = origin + points[i] * [radius, radius]
         else:
             raise NotImplementedError(f"pad shape {self[2]} is not implemented")
@@ -266,6 +278,8 @@ def from_tokens(tokens: list, index: int, parent: str) -> Tuple[int, Union[Expr,
             expr = Movable(typ)
         elif typ in drawable_types:
             expr = Drawable(typ)
+        elif typ == "pad":
+            expr = Pad(typ)
         else:
             expr = Expr(typ)
 
