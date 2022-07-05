@@ -17,7 +17,7 @@ from uuid import uuid4
 import numpy as np
 
 from .bbox import BoundingBox
-from .parser import Expr, from_str, Footprint, Polygon
+from .parser import Expr, from_str, Footprint, Polygon, Movable
 
 
 class Schematic:
@@ -153,6 +153,9 @@ class PCB:
             outer.envelop(box.corners)
 
         return outer
+
+    def move(self, x: float, y: float):
+        self._pcb.apply(Movable, methodcaller("move_xy", x, y))
 
 
 class Project:

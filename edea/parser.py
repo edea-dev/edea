@@ -19,9 +19,15 @@ from .bbox import BoundingBox
 Symbol = str
 Number = (int, float)
 Atom = (Symbol, Number)
-to_be_moved = ["module", "gr_text", "gr_poly", "gr_line", "gr_arc", "via", "segment", "dimension", "gr_circle",
-               "gr_curve", "arc", ]
-movable_types = ["at", "xy", "start", "end", "center"]
+
+# types which have children with absolute coordinates
+to_be_moved = ["footprint", "gr_text", "gr_poly", "gr_line", "gr_arc", "via", "segment", "dimension", "gr_circle",
+               "gr_curve", "arc", "polygon", "filled_polygon"]  # pts is handled separately
+skip_move = ["primitives"]
+
+# types which should be moved if their parent is in the set of "to_be_moved"
+movable_types = ["at", "xy", "start", "end", "center", "mid"]
+
 drawable_types = ["pin", "polyline", "rectangle"]
 lib_symbols = {}
 TOKENIZE_EXPR = re.compile(r'("[^"]*"|\(|\)|"|[^\s()"]+)')
@@ -55,7 +61,7 @@ class Expr(UserList):
 
     def __str__(self) -> str:
         sub = " ".join(map(methodcaller("__str__"), self.data))
-        return f"({self.name} {sub})"
+        return f"\n({self.name} {sub})"
 
     def apply(self, cls, func) -> list | None:
         """
@@ -163,7 +169,19 @@ class Movable(Expr):
 
 
 @dataclass(init=False)
-class Pad(Movable):
+class Pts(Movable):
+    """Movable is an object with a position"""
+
+    def move_xy(self, x: float, y: float) -> None:
+        """move_xy adds the position offset x and y to the object"""
+        for point in self.data:
+            if point.name == "xy":
+                point.data[0] += x
+                point.data[1] += y
+
+
+@dataclass(init=False)
+class Pad(Expr):
     """Pad"""
 
     def corners(self):
@@ -241,7 +259,7 @@ class Polygon(Expr):
 
 
 @dataclass(init=False)
-class Footprint(Movable):
+class Footprint(Expr):
     """Footprint"""
 
     def bounding_box(self) -> BoundingBox:
@@ -308,11 +326,11 @@ class Drawable(Movable):
 def from_str(program: str) -> Expr:
     """Parse KiCAD s-expr from a string"""
     tokens = TOKENIZE_EXPR.findall(program)
-    _, expr = from_tokens(tokens, 0, "")
+    _, expr = from_tokens(tokens, 0, "", "")
     return expr
 
 
-def from_tokens(tokens: list, index: int, parent: str) -> Tuple[int, Union[Expr, int, float, str]]:
+def from_tokens(tokens: list, index: int, parent: str, grand_parent: str) -> Tuple[int, Union[Expr, int, float, str]]:
     """Read an expression from a sequence of tokens."""
     if len(tokens) == index:
         raise SyntaxError("unexpected EOF")
@@ -325,9 +343,7 @@ def from_tokens(tokens: list, index: int, parent: str) -> Tuple[int, Union[Expr,
         index += 1
 
         # TODO: handle more types here
-        if typ in movable_types and parent in to_be_moved:
-            expr = Movable(typ)
-        elif typ in drawable_types:
+        if typ in drawable_types:
             expr = Drawable(typ)
         elif typ == "pad":
             expr = Pad(typ)
@@ -337,11 +353,15 @@ def from_tokens(tokens: list, index: int, parent: str) -> Tuple[int, Union[Expr,
             expr = FPLine(typ)
         elif typ == "polygon" or typ == "filled_polygon":
             expr = Polygon(typ)
+        elif typ == "pts" and parent in to_be_moved and grand_parent not in skip_move:
+            expr = Pts(typ)
+        elif typ in movable_types and parent in to_be_moved:
+            expr = Movable(typ)
         else:
             expr = Expr(typ)
 
         while tokens[index] != ")":
-            index, sub_expr = from_tokens(tokens, index, expr.name)
+            index, sub_expr = from_tokens(tokens, index, expr.name, parent)
             expr.append(sub_expr)
         index += 1  # remove ')'
 
