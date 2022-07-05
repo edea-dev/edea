@@ -82,7 +82,6 @@ class Expr(UserList):
             return None
         return vals
 
-
     def parsed(self):
         """subclasses can parse additional stuff out of data now"""
         # TODO: currently modifying the object and accessing fields again is not handled
@@ -171,11 +170,11 @@ class Pad(Movable):
         """Returns a numpy array containing every corner [x,y]
         """
         if len(self.at) > 2:
-            angle = self.at[2] / tau
+            angle = self.at.data[2] / tau
         else:
             angle = 0
-        origin = self.at.data[0:2] # in this case we explicitly need to access the data list because of the range op
-                                   # otherwise it would return a list of Expr
+        origin = self.at.data[0:2]  # in this case we explicitly need to access the data list because of the range op
+        # otherwise it would return a list of Expr
 
         if self[2] in ["rect", "roundrect", "oval", "custom"]:
             # TODO optimize this, this is called quite often
@@ -183,8 +182,8 @@ class Pad(Movable):
             points = np.array([[1, 1], [1, -1], [-1, 1], [-1, -1]], dtype=np.float64)
             if self[2] == "oval":
                 points = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
-            w = self.size[0] / 2
-            h = self.size[1] / 2
+            w = self.size.data[0] / 2
+            h = self.size.data[1] / 2
             angle_cos = cos(angle)
             angle_sin = sin(angle)
             for i, _ in enumerate(points):
@@ -192,7 +191,7 @@ class Pad(Movable):
 
         elif self[2] == "circle":
             points = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
-            radius = self.size[0] / 2
+            radius = self.size.data[0] / 2
             for i, _ in enumerate(points):
                 points[i] = origin + points[i] * [radius, radius]
         else:
@@ -202,24 +201,76 @@ class Pad(Movable):
 
 
 @dataclass(init=False)
-class Module(Movable):
-    """Module"""
+class FPLine(Expr):
+    """FPLine"""
 
-    @property
+    def corners(self):
+        points = np.array([[self.start[0], self.start[1]], [self.end[0], self.end[1]]],
+                          dtype=np.float64)
+        return points
+
+
+@dataclass(init=False)
+class Polygon(Expr):
+    """Polygon
+    TODO: Zone polygons are with absolute positions, are there other types?
+    """
+
+    def bounding_box(self) -> BoundingBox:
+        return BoundingBox(self.corners())
+
+    def corners(self) -> np.array:
+        x_points = []
+        y_points = []
+
+        for point in self.pts:
+            if point.name != "xy":
+                raise NotImplementedError(f"the following polygon format isn't implemented yet: {point}")
+            x_points.append(point[0])
+            y_points.append(point[1])
+
+        npx = np.array(x_points)
+        npy = np.array(y_points)
+
+        max_x = np.amax(npx)
+        min_x = np.amin(npx)
+        max_y = np.amax(npy)
+        min_y = np.amin(npy)
+
+        return np.array([[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y], ], dtype=np.float64)
+
+
+@dataclass(init=False)
+class Footprint(Movable):
+    """Footprint"""
+
     def bounding_box(self) -> BoundingBox:
         """return the BoundingBox"""
-        if not hasattr(self, "pad"):
-            box = BoundingBox([])
-        else:
-            box = BoundingBox(self.pad[0].corners)
+        box = BoundingBox([])
+        if hasattr(self, "pad"):
+            # check if it's a single pad only
+            if isinstance(self.pad, list):
+                [box.envelop(pad.corners()) for pad in self.pad]
+            else:
+                box.envelop(self.pad.corners())
 
-        if len(self.pad) > 1:
-            for i in range(1, len(self.pad)):
-                box.envelop(self.pad[i].corners)
+            if len(self.at.data) > 2:
+                box.rotate(self.at.data[2])
+            box.translate(self.at.data[0:2])
 
-        if len(self.at) > 2:
-            box.rotate(self.at[2])
-        box.translate(self.at[0:2])
+        if hasattr(self, "fp_line"):
+            # check if it's a single line only
+            if isinstance(self.fp_line, list):
+                [box.envelop(pad.corners()) for pad in self.pad]
+            else:
+                box.envelop(self.fp_line.corners())
+
+            if len(self.at.data) > 2:
+                box.rotate(self.at.data[2])
+            box.translate(self.at.data[0:2])
+
+        # TODO(ln): implement other types too, though pads and lines should work well enough
+
         return box
 
 
@@ -280,6 +331,12 @@ def from_tokens(tokens: list, index: int, parent: str) -> Tuple[int, Union[Expr,
             expr = Drawable(typ)
         elif typ == "pad":
             expr = Pad(typ)
+        elif typ == "footprint":
+            expr = Footprint(typ)
+        elif typ == "fp_line":
+            expr = FPLine(typ)
+        elif typ == "polygon" or typ == "filled_polygon":
+            expr = Polygon(typ)
         else:
             expr = Expr(typ)
 

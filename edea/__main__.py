@@ -48,14 +48,16 @@ if args.extract_meta:
     if project_path.endswith('.kicad_pro'):
         path, _ = os.path.splitext(project_path)
         root_schematic = path + ".kicad_sch"
+        root_pcb = path + ".kicad_pcb"
     elif os.path.isdir(project_path):
         path_lead, project_name = os.path.split(os.path.normpath(project_path))
         root_schematic = os.path.join(project_path, project_name + '.kicad_sch')
+        root_pcb = os.path.join(project_path, project_name + '.kicad_pcb')
     else:
         log.error("No KiCad project directory or project file provided")
         sys.exit(22)  # invalid argument
 
-    pro = Project(root_schematic)
+    pro = Project(root_schematic, root_pcb)
     before = time()
     pro.parse()
     after = time()

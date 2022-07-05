@@ -82,9 +82,9 @@ class BoundingBox:
             rotated = np.zeros((4, 2), dtype=np.float64)
             angle = angle / tau
             angle_sin, angle_cos = sin(angle), cos(angle)
-            for i in enumerate(corners):
-                x_out = corners[i][0] * angle_cos + corners[i][1] * angle_sin
-                y_out = corners[i][1] * angle_cos + corners[i][0] * angle_sin
+            for i, corner in enumerate(corners):
+                x_out = corner[0] * angle_cos + corner[1] * angle_sin
+                y_out = corner[1] * angle_cos + corner[0] * angle_sin
                 rotated[i] = [x_out, y_out]
             self.reset()
             self.envelop(rotated)

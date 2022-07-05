@@ -31,7 +31,8 @@ def get_path_to_test_project(project_name, ext="kicad_sch"):
 class TestMetadata:
     def test_metadata_extraction_all_projects(self):
         for proj_name, context in test_projects.items():
-            pro = Project(get_path_to_test_project(proj_name))
+            path = get_path_to_test_project(proj_name, "")
+            pro = Project(path + "kicad_sch", path + "kicad_pcb")
             before = time()
             pro.parse()
             after = time()

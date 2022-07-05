@@ -17,7 +17,7 @@ from uuid import uuid4
 import numpy as np
 
 from .bbox import BoundingBox
-from .parser import Expr, from_str, Pad
+from .parser import Expr, from_str, Footprint, Polygon
 
 
 class Schematic:
@@ -135,9 +135,24 @@ class PCB:
         """ return the schematic as an Expr """
         return self._pcb
 
-    def bounding_box(self):
-        all_corners = self._pcb.apply(Pad, methodcaller("corners"))
-        print(all_corners)
+    def bounding_box(self) -> BoundingBox:
+        flatten = lambda l: sum(map(flatten, l), []) if isinstance(l, list) else [l]
+
+        footprints = flatten(
+            self._pcb.apply(Footprint, methodcaller("bounding_box")))  # return value is a list of single element lists
+        polygons = flatten(self._pcb.apply(Polygon, methodcaller("bounding_box")))
+
+        all_boxes = []
+        all_boxes.extend(footprints)
+        all_boxes.extend(polygons)
+
+        outer = BoundingBox([])
+
+        # add bounding boxes together
+        for box in all_boxes:
+            outer.envelop(box.corners)
+
+        return outer
 
 
 class Project:
@@ -150,13 +165,15 @@ class Project:
     symbol_instances = {}
     top: str
     sheets: int  # sheets is the amount of schematics including all instances of sub-schematics
+    pcb: PCB
 
-    def __init__(self, file_name) -> None:
-        self.file_name = file_name
+    def __init__(self, sch_file_name: str, pcb_file_name: str) -> None:
+        self.sch_file_name = sch_file_name
+        self.pcb_file_name = pcb_file_name
 
     def parse(self):
-        """parse the base schematic"""
-        with open(self.file_name, encoding="utf-8") as sch_file:
+        """parse the base schematic and PCB file"""
+        with open(self.sch_file_name, encoding="utf-8") as sch_file:
             sch = from_str(sch_file.read())
 
         # loop through symbol instances and extract a tree for uuid to reference
@@ -176,7 +193,11 @@ class Project:
                     self.symbol_instances[symbol_id] = [reference]
 
         self.top = sch.uuid[0]
-        self._parse_sheet(sch, self.file_name)
+        self._parse_sheet(sch, self.sch_file_name)
+
+        # parse the PCB
+        with open(self.pcb_file_name, encoding="utf-8") as pcb_file:
+            self.pcb = PCB(from_str(pcb_file.read()), "", self.pcb_file_name)
 
     def _parse_sheet(self, sch: Expr, file_name: str):
         """recursively parse schematic sub-sheets"""
@@ -184,7 +205,7 @@ class Project:
         self.schematics[uuid] = Schematic(sch, "", file_name)
         self.fn_to_uuid[os.path.basename(file_name)] = uuid
 
-        dir_name = os.path.dirname(self.file_name)
+        dir_name = os.path.dirname(self.sch_file_name)
 
         if not hasattr(sch, "sheet"):
             return
@@ -236,7 +257,10 @@ class Project:
 
             bom_parts[sym.uuid[0]] = properties
 
-        bom = {"count_part": len(parts), "count_unique": len(unique_keys), "parts": bom_parts, "sheets": self.sheets, }
+        box = self.pcb.bounding_box()
+
+        bom = {"count_part": len(parts), "count_unique": len(unique_keys), "parts": bom_parts, "sheets": self.sheets,
+               "area": box.area}
 
         return bom
 

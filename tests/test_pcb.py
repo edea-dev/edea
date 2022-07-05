@@ -6,17 +6,15 @@ This takes ferret, a fairly complex project and verifies some basic facts about 
 SPDX-License-Identifier: EUPL-1.2
 """
 
-import os
-from time import time
-
-from edea.edea import Project, PCB
+from edea.edea import PCB
 from edea.parser import from_str
 from tests.test_metadata import get_path_to_test_project
 
 test_projects = {
     "ferret": {
         "count_part": 134,
-        "count_unique": 115
+        "count_unique": 115,
+        "area": 2500.0
     }
 }
 
@@ -29,4 +27,6 @@ class TestPCB:
                 s = f.read()
             pcb = PCB(from_str(s), proj_name, fn)
 
-            pcb.bounding_box()
+            bb = pcb.bounding_box()
+
+            assert bb.area == context["area"]
