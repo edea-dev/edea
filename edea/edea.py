@@ -11,13 +11,17 @@ from __future__ import annotations
 import os
 from itertools import filterfalse, groupby
 from operator import methodcaller
-from typing import Dict
+from typing import Dict, List
 from uuid import uuid4
 
 import numpy as np
 
 from .bbox import BoundingBox
 from .parser import Expr, from_str, Footprint, Polygon, Movable
+
+# top level types to copy over to the new PCB
+copy_parts = ["footprint", "zone", "via", "segment", "arc", "gr_text", "gr_line", "gr_poly", "gr_arc", "gr_circle",
+              "gr_curve", "dimension"]
 
 
 class Schematic:
@@ -156,6 +160,44 @@ class PCB:
 
     def move(self, x: float, y: float):
         self._pcb.apply(Movable, methodcaller("move_xy", x, y))
+
+    def append(self, pcbs: List[PCB]):
+        # step 1: get nets, merge and rename them
+
+        # TODO: actually do it
+
+        # step 2: arrange pcbs
+        # move initial pcb to origin coordinates
+        target_box = self.bounding_box()
+        self.move(-target_box.min_x, -target_box.min_y)
+
+        # step 3: merge
+        for pcb in pcbs:
+            target_box = self.bounding_box()
+            pcb_box = pcb.bounding_box()
+
+            # move the new PCB 20 units to the right of the previous one
+            pcb.move(-pcb_box.min_x + target_box.max_x + 20.0, -pcb_box.min_y)
+
+            # TODO: arrange the PCBs within rows and columns, but for this we would need to calculate all placements
+            #       beforehand.
+
+            expr = pcb.as_expr()
+            for part in copy_parts:
+                if hasattr(expr, part):
+                    print(f"getting {part}")
+                    sub_expr = expr.__getattr__(part)
+                    print(sub_expr)
+                    # if it's a single occurrence we can just append it, otherwise extend the parent
+                    if isinstance(sub_expr, list):
+                        self._pcb.data.extend(sub_expr)
+                    elif isinstance(sub_expr, dict):
+                        self._pcb.extend(sub_expr.values())
+                    else:
+                        self._pcb.data.extend(sub_expr)
+
+        # refresh known attributes, etc
+        self._pcb.parsed()
 
 
 class Project:
