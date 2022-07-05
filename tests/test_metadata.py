@@ -14,7 +14,8 @@ from edea.edea import Project
 test_projects = {
     "ferret": {
         "count_part": 134,
-        "count_unique": 115
+        "count_unique": 115,
+        "copper_layers": 4
     }
 }
 

@@ -259,8 +259,13 @@ class Project:
 
         box = self.pcb.bounding_box()
 
+        copper_layers = 0
+        for layer in self.pcb.as_expr().layers:
+            if layer[0].endswith('.Cu"'):
+                copper_layers += 1
+
         bom = {"count_part": len(parts), "count_unique": len(unique_keys), "parts": bom_parts, "sheets": self.sheets,
-               "area": box.area}
+               "area": box.area, "width": box.width, "height": box.height, "copper_layers": copper_layers}
 
         return bom
 
