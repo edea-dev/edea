@@ -11,13 +11,13 @@ from __future__ import annotations
 import os
 from itertools import filterfalse, groupby
 from operator import methodcaller
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from uuid import uuid4
 
 import numpy as np
 
 from .bbox import BoundingBox
-from .parser import Expr, from_str, Footprint, Polygon, Movable
+from .parser import Expr, from_str, Footprint, Polygon, Movable, TStamp
 
 # top level types to copy over to the new PCB
 copy_parts = ["footprint", "zone", "via", "segment", "arc", "gr_text", "gr_line", "gr_poly", "gr_arc", "gr_circle",
@@ -161,7 +161,11 @@ class PCB:
     def move(self, x: float, y: float):
         self._pcb.apply(Movable, methodcaller("move_xy", x, y))
 
-    def append(self, pcbs: List[PCB]):
+    def append(self, pcbs: List[Tuple[str, PCB]]):
+        """
+        append merges one or more PCBs into the current one. it also takes a UUID per PCB
+        which is prepended to the path of symbols/footprints
+        """
         # step 1: get nets, merge and rename them
 
         # TODO: actually do it
@@ -172,7 +176,7 @@ class PCB:
         self.move(-target_box.min_x, -target_box.min_y)
 
         # step 3: merge
-        for pcb in pcbs:
+        for path_uuid, pcb in pcbs:
             target_box = self.bounding_box()
             pcb_box = pcb.bounding_box()
 
@@ -183,11 +187,16 @@ class PCB:
             #       beforehand.
 
             expr = pcb.as_expr()
+
+            # prepend paths and randomize "tstamp" values
+            expr.apply(Footprint, methodcaller("prepend_path", path_uuid))
+            expr.apply(TStamp, methodcaller("randomize"))
+
             for part in copy_parts:
                 if hasattr(expr, part):
                     print(f"getting {part}")
                     sub_expr = expr.__getattr__(part)
-                    print(sub_expr)
+
                     # if it's a single occurrence we can just append it, otherwise extend the parent
                     if isinstance(sub_expr, list):
                         self._pcb.data.extend(sub_expr)

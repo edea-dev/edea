@@ -11,6 +11,7 @@ from collections import UserList
 from dataclasses import dataclass
 from math import tau, cos, sin
 from typing import Tuple, Union
+from uuid import uuid4, UUID
 
 import numpy as np
 
@@ -291,6 +292,11 @@ class Footprint(Expr):
 
         return box
 
+    def prepend_path(self, path: str):
+        # path is always in the format of /<uuid>[/<uuid>]
+        sub = self.path.data[0].strip('"')
+        self.path.data[0] = f"\"/{path}{sub}\""
+
 
 @dataclass(init=False)
 class Drawable(Movable):
@@ -321,6 +327,17 @@ class Drawable(Movable):
                 f'<rect x="{x_start + position[0]}" y="{y_start + position[1]}" width="{x_start - x_end}" height="{y_start - y_end}" />')
         else:
             raise NotImplementedError(self.name)
+
+
+@dataclass(init=False)
+class TStamp(Expr):
+    """TStamp UUIDv4 identifiers which replace the pcbnew v5 timestamp base ones"""
+
+    def randomize(self):
+        # parse the old uuid first to catch edgecases
+        _ = UUID(self.data[0])
+        # generate a new random UUIDv4
+        self.data[0] = str(uuid4())
 
 
 def from_str(program: str) -> Expr:
@@ -357,6 +374,8 @@ def from_tokens(tokens: list, index: int, parent: str, grand_parent: str) -> Tup
             expr = Pts(typ)
         elif typ in movable_types and parent in to_be_moved:
             expr = Movable(typ)
+        elif typ == "tstamp":
+            expr = TStamp(typ)
         else:
             expr = Expr(typ)
 
