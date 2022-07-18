@@ -6,12 +6,12 @@ SPDX-License-Identifier: EUPL-1.2
 from __future__ import annotations
 
 import re
-from _operator import methodcaller
 from collections import UserList
 from dataclasses import dataclass
 from math import tau, cos, sin
-from typing import Tuple, Union
+from typing import Tuple, Union, Dict
 from uuid import uuid4, UUID
+from _operator import methodcaller
 
 import numpy as np
 
@@ -224,6 +224,8 @@ class FPLine(Expr):
     """FPLine"""
 
     def corners(self):
+        """ corners returns start and end of the FPLine
+        """
         points = np.array([[self.start[0], self.start[1]], [self.end[0], self.end[1]]],
                           dtype=np.float64)
         return points
@@ -236,9 +238,13 @@ class Polygon(Expr):
     """
 
     def bounding_box(self) -> BoundingBox:
+        """ bounding_box of the polygon
+        """
         return BoundingBox(self.corners())
 
     def corners(self) -> np.array:
+        """ corners returns the min and max points of a polygon
+        """
         x_points = []
         y_points = []
 
@@ -269,7 +275,7 @@ class Footprint(Expr):
         if hasattr(self, "pad"):
             # check if it's a single pad only
             if isinstance(self.pad, list):
-                [box.envelop(pad.corners()) for pad in self.pad]
+                _ = [box.envelop(pad.corners()) for pad in self.pad]
             else:
                 box.envelop(self.pad.corners())
 
@@ -280,7 +286,7 @@ class Footprint(Expr):
         if hasattr(self, "fp_line"):
             # check if it's a single line only
             if isinstance(self.fp_line, list):
-                [box.envelop(pad.corners()) for pad in self.pad]
+                _ = [box.envelop(pad.corners()) for pad in self.pad]
             else:
                 box.envelop(self.fp_line.corners())
 
@@ -293,6 +299,8 @@ class Footprint(Expr):
         return box
 
     def prepend_path(self, path: str):
+        """ prepend_path prepends the uuid path to the current one
+        """
         # path is always in the format of /<uuid>[/<uuid>]
         sub = self.path.data[0].strip('"')
         self.path.data[0] = f"\"/{path}{sub}\""
@@ -331,13 +339,44 @@ class Drawable(Movable):
 
 @dataclass(init=False)
 class TStamp(Expr):
-    """TStamp UUIDv4 identifiers which replace the pcbnew v5 timestamp base ones"""
+    """
+    TStamp UUIDv4 identifiers which replace the pcbnew v5 timestamp base ones
+    """
 
     def randomize(self):
+        """randomize the tstamp UUID
+        """
         # parse the old uuid first to catch edgecases
         _ = UUID(self.data[0])
         # generate a new random UUIDv4
         self.data[0] = str(uuid4())
+
+
+@dataclass(init=False)
+class Net(Expr):
+
+    def rename(self, numbers: Dict[int, int], names: Dict[str, str]):
+        """ rename and/or re-number a net
+
+        A net type is either net_name with only the name (net_name "abcd"), net with only the number (net 42)
+        of net with number and name (net 42 "abcd")
+        """
+        name_offset = 0
+        if self.name == "net_name":
+            net_name = self.data[0]
+            net_number = None
+        elif self.name == "net" and len(self.data) == 1:
+            net_name = None
+            net_number = self.data[0]
+        else:
+            name_offset = 1
+            net_name = self.data[1]
+            net_number = self.data[0]
+
+        if net_name in names:
+            self.data[name_offset] = names[net_name]
+        if net_number in numbers:
+            self.data[0] = numbers[net_number]
 
 
 def from_str(program: str) -> Expr:
@@ -368,7 +407,7 @@ def from_tokens(tokens: list, index: int, parent: str, grand_parent: str) -> Tup
             expr = Footprint(typ)
         elif typ == "fp_line":
             expr = FPLine(typ)
-        elif typ == "polygon" or typ == "filled_polygon":
+        elif typ in ["polygon", "filled_polygon"]:
             expr = Polygon(typ)
         elif typ == "pts" and parent in to_be_moved and grand_parent not in skip_move:
             expr = Pts(typ)

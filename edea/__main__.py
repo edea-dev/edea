@@ -15,7 +15,7 @@ from time import time
 from typing import Dict
 
 from .edea import Schematic, Project
-from .kicad_files import empty_project
+from .kicad_files import EMPTY_PROJECT
 from .parser import from_str
 
 parser = argparse.ArgumentParser(description='Tool to parse, render, and merge KiCad projects.')
@@ -41,7 +41,7 @@ if args.extract_meta:
     # parse the top-level schematic (and sub-schematics) plus the PCB file
     # and output metadata about it
     if len(args.projects) != 1:
-        log.error(f"need exactly one KiCad Project, found {len(args.projects)}")
+        log.error("need exactly one KiCad Project, found %d", len(args.projects))
         sys.exit(7)  # argument list too long
 
     project_path = args.projects[0]
@@ -76,7 +76,7 @@ elif args.merge:
         _, output_name = os.path.split(os.path.normpath(args.output))
         output_path = args.output
     else:
-        log.error(f'output path "{args.output}" is not a directory')
+        log.error('output path "%s" is not a directory', args.output)
         sys.exit(20)  # not a directory
 
     files = {}
@@ -92,7 +92,7 @@ elif args.merge:
             _, project_name = os.path.split(os.path.normpath(path))
             project_path = path
         else:
-            log.error(f"{path} doesn't point to a kicad project file or kicad project directory")
+            log.error("%s doesn't point to a kicad project file or kicad project directory", path)
             sys.exit(2)  # no such file or directory
 
         if project_path not in files:
@@ -112,7 +112,7 @@ elif args.merge:
 
     # now iterate all the (renamed) instances of the projects
     for project_path, obj in files.items():
-        log.debug(f"merging schematic: {project_path} {obj}")
+        log.debug("merging schematic: %s %s", project_path, obj)
 
         # parse the schematic once, append as many times as needed
         root_schematic = os.path.join(project_path, obj[0]["project_name"] + '.kicad_sch')
@@ -124,9 +124,14 @@ elif args.merge:
                 project_name = instance['project_name']
                 parsed_schematics[name] = Schematic(expr, name, f"{project_name}.kicad_sch")
 
+    # TODO: get the sub-schematic uuid here and apply it to the right PCB first
     target_schematic.append(parsed_schematics)
 
     # TODO: merge PCB too
+    for project_path, obj in files.items():
+        log.debug("merging pcbs: %s %s", project_path, obj)
+
+
 
     # write the resulting schematic
     with open(f"{os.path.join(output_path, output_name)}.kicad_sch", "w", encoding="utf-8") as f:
@@ -144,7 +149,7 @@ elif args.merge:
 
     # generate project file
     with open(f"{os.path.join(output_path, output_name)}.kicad_pro", "w", encoding="utf-8") as f:
-        s = Template(empty_project)
+        s = Template(EMPTY_PROJECT)
         f.write(s.substitute(project_name=output_name))
 else:
     log.error("only merge and metadata extraction are implemented for now")

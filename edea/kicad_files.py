@@ -1,4 +1,8 @@
-empty_project = """
+"""
+A set of minimal KiCad files
+"""
+
+EMPTY_PROJECT = """
 {
   "board": {
     "design_settings": {

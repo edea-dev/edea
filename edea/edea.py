@@ -140,6 +140,8 @@ class PCB:
         return self._pcb
 
     def bounding_box(self) -> BoundingBox:
+        """ bounding_box calculates and returns the BoundingBox of a PCB
+        """
         flatten = lambda l: sum(map(flatten, l), []) if isinstance(l, list) else [l]
 
         footprints = flatten(
@@ -159,6 +161,8 @@ class PCB:
         return outer
 
     def move(self, x: float, y: float):
+        """ move a pcb with relative coordinates
+        """
         self._pcb.apply(Movable, methodcaller("move_xy", x, y))
 
     def append(self, pcbs: List[Tuple[str, PCB]]):
