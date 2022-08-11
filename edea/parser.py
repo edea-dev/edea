@@ -6,11 +6,12 @@ SPDX-License-Identifier: EUPL-1.2
 from __future__ import annotations
 
 import re
-from _operator import methodcaller
 from collections import UserList
 from dataclasses import dataclass
 from math import tau, cos, sin
-from typing import Tuple, Union
+from typing import Tuple, Union, Dict
+from uuid import uuid4, UUID
+from _operator import methodcaller
 
 import numpy as np
 
@@ -19,12 +20,18 @@ from .bbox import BoundingBox
 Symbol = str
 Number = (int, float)
 Atom = (Symbol, Number)
-to_be_moved = ["module", "gr_text", "gr_poly", "gr_line", "gr_arc", "via", "segment", "dimension", "gr_circle",
-               "gr_curve", "arc", ]
-movable_types = ["at", "xy", "start", "end", "center"]
+
+# types which have children with absolute coordinates
+to_be_moved = ["footprint", "gr_text", "gr_poly", "gr_line", "gr_arc", "via", "segment", "dimension", "gr_circle",
+               "gr_curve", "arc", "polygon", "filled_polygon"]  # pts is handled separately
+skip_move = ["primitives"]
+
+# types which should be moved if their parent is in the set of "to_be_moved"
+movable_types = ["at", "xy", "start", "end", "center", "mid"]
+
 drawable_types = ["pin", "polyline", "rectangle"]
 lib_symbols = {}
-TOKENIZE_EXPR = re.compile(r'("[^"]*"|\(|\)|"|[^\s()"]+)')
+TOKENIZE_EXPR = re.compile(r'("[^"\\]*(?:\\.[^"\\]*)*"|\(|\)|"|[^\s()"]+)')
 
 
 @dataclass
@@ -55,21 +62,32 @@ class Expr(UserList):
 
     def __str__(self) -> str:
         sub = " ".join(map(methodcaller("__str__"), self.data))
-        return f"({self.name} {sub})"
+        return f"\n({self.name} {sub})"
 
-    def apply(self, cls, func) -> None:
+    def apply(self, cls, func) -> list | None:
         """
         call func on all objects in data recursively which match the type
 
         to call an instance method, just use e.g. v.apply(Pad, methodcaller("move_xy", x, y))
         """
+        vals = []
+        ret = None
+
         if isinstance(self, cls):
-            func(self)
+            ret = func(self)
+            if ret is not None:
+                vals.append(ret)
 
         if len(self.data) > 0:
             for item in self.data:
                 if isinstance(item, Expr):
-                    item.apply(cls, func)
+                    ret = item.apply(cls, func)
+                    if ret is not None:
+                        vals.append(ret)
+
+        if len(vals) == 0:
+            return None
+        return vals
 
     def parsed(self):
         """subclasses can parse additional stuff out of data now"""
@@ -152,36 +170,48 @@ class Movable(Expr):
 
 
 @dataclass(init=False)
-class Pad(Movable):
+class Pts(Movable):
+    """Movable is an object with a position"""
+
+    def move_xy(self, x: float, y: float) -> None:
+        """move_xy adds the position offset x and y to the object"""
+        for point in self.data:
+            if point.name == "xy":
+                point.data[0] += x
+                point.data[1] += y
+
+
+@dataclass(init=False)
+class Pad(Expr):
     """Pad"""
 
-    @property
     def corners(self):
         """Returns a numpy array containing every corner [x,y]
         """
         if len(self.at) > 2:
-            angle = self.at[2] / tau
+            angle = self.at.data[2] / tau
         else:
             angle = 0
-        origin = self.at[0:2]
+        origin = self.at.data[0:2]  # in this case we explicitly need to access the data list because of the range op
+        # otherwise it would return a list of Expr
 
-        if self.name in ["rect", "roundrect", "oval", "custom"]:
+        if self[2] in ["rect", "roundrect", "oval", "custom"]:
             # TODO optimize this, this is called quite often
 
             points = np.array([[1, 1], [1, -1], [-1, 1], [-1, -1]], dtype=np.float64)
             if self[2] == "oval":
                 points = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
-            w = self.size[0] / 2
-            h = self.size[1] / 2
+            w = self.size.data[0] / 2
+            h = self.size.data[1] / 2
             angle_cos = cos(angle)
             angle_sin = sin(angle)
-            for i in enumerate(points):
+            for i, _ in enumerate(points):
                 points[i] = origin + points[i] * [(w * angle_cos + h * angle_sin), (h * angle_cos + w * angle_sin)]
 
         elif self[2] == "circle":
             points = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
-            radius = self.size[0] / 2
-            for i in enumerate(points):
+            radius = self.size.data[0] / 2
+            for i, _ in enumerate(points):
                 points[i] = origin + points[i] * [radius, radius]
         else:
             raise NotImplementedError(f"pad shape {self[2]} is not implemented")
@@ -190,25 +220,90 @@ class Pad(Movable):
 
 
 @dataclass(init=False)
-class Module(Movable):
-    """Module"""
+class FPLine(Expr):
+    """FPLine"""
 
-    @property
+    def corners(self):
+        """ corners returns start and end of the FPLine
+        """
+        points = np.array([[self.start[0], self.start[1]], [self.end[0], self.end[1]]],
+                          dtype=np.float64)
+        return points
+
+
+@dataclass(init=False)
+class Polygon(Expr):
+    """Polygon
+    TODO: Zone polygons are with absolute positions, are there other types?
+    """
+
+    def bounding_box(self) -> BoundingBox:
+        """ bounding_box of the polygon
+        """
+        return BoundingBox(self.corners())
+
+    def corners(self) -> np.array:
+        """ corners returns the min and max points of a polygon
+        """
+        x_points = []
+        y_points = []
+
+        for point in self.pts:
+            if point.name != "xy":
+                raise NotImplementedError(f"the following polygon format isn't implemented yet: {point}")
+            x_points.append(point[0])
+            y_points.append(point[1])
+
+        npx = np.array(x_points)
+        npy = np.array(y_points)
+
+        max_x = np.amax(npx)
+        min_x = np.amin(npx)
+        max_y = np.amax(npy)
+        min_y = np.amin(npy)
+
+        return np.array([[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y], ], dtype=np.float64)
+
+
+@dataclass(init=False)
+class Footprint(Expr):
+    """Footprint"""
+
     def bounding_box(self) -> BoundingBox:
         """return the BoundingBox"""
-        if not hasattr(self, "pad"):
-            box = BoundingBox([])
-        else:
-            box = BoundingBox(self.pad[0].corners)
+        box = BoundingBox([])
+        if hasattr(self, "pad"):
+            # check if it's a single pad only
+            if isinstance(self.pad, list):
+                _ = [box.envelop(pad.corners()) for pad in self.pad]
+            else:
+                box.envelop(self.pad.corners())
 
-        if len(self.pad) > 1:
-            for i in range(1, len(self.pad)):
-                box.envelop(self.pad[i].corners)
+            if len(self.at.data) > 2:
+                box.rotate(self.at.data[2])
+            box.translate(self.at.data[0:2])
 
-        if len(self.at) > 2:
-            box.rotate(self.at[2])
-        box.translate(self.at[0:2])
+        if hasattr(self, "fp_line"):
+            # check if it's a single line only
+            if isinstance(self.fp_line, list):
+                _ = [box.envelop(pad.corners()) for pad in self.pad]
+            else:
+                box.envelop(self.fp_line.corners())
+
+            if len(self.at.data) > 2:
+                box.rotate(self.at.data[2])
+            box.translate(self.at.data[0:2])
+
+        # TODO(ln): implement other types too, though pads and lines should work well enough
+
         return box
+
+    def prepend_path(self, path: str):
+        """ prepend_path prepends the uuid path to the current one
+        """
+        # path is always in the format of /<uuid>[/<uuid>]
+        sub = self.path.data[0].strip('"')
+        self.path.data[0] = f"\"/{path}{sub}\""
 
 
 @dataclass(init=False)
@@ -242,14 +337,56 @@ class Drawable(Movable):
             raise NotImplementedError(self.name)
 
 
+@dataclass(init=False)
+class TStamp(Expr):
+    """
+    TStamp UUIDv4 identifiers which replace the pcbnew v5 timestamp base ones
+    """
+
+    def randomize(self):
+        """randomize the tstamp UUID
+        """
+        # parse the old uuid first to catch edgecases
+        _ = UUID(self.data[0])
+        # generate a new random UUIDv4
+        self.data[0] = str(uuid4())
+
+
+@dataclass(init=False)
+class Net(Expr):
+
+    def rename(self, numbers: Dict[int, int], names: Dict[str, str]):
+        """ rename and/or re-number a net
+
+        A net type is either net_name with only the name (net_name "abcd"), net with only the number (net 42)
+        of net with number and name (net 42 "abcd")
+        """
+        name_offset = 0
+        if self.name == "net_name":
+            net_name = self.data[0]
+            net_number = None
+        elif self.name == "net" and len(self.data) == 1:
+            net_name = None
+            net_number = self.data[0]
+        else:
+            name_offset = 1
+            net_name = self.data[1]
+            net_number = self.data[0]
+
+        if net_name in names:
+            self.data[name_offset] = names[net_name]
+        if net_number in numbers:
+            self.data[0] = numbers[net_number]
+
+
 def from_str(program: str) -> Expr:
     """Parse KiCAD s-expr from a string"""
     tokens = TOKENIZE_EXPR.findall(program)
-    _, expr = from_tokens(tokens, 0, "")
+    _, expr = from_tokens(tokens, 0, "", "")
     return expr
 
 
-def from_tokens(tokens: list, index: int, parent: str) -> Tuple[int, Union[Expr, int, float, str]]:
+def from_tokens(tokens: list, index: int, parent: str, grand_parent: str) -> Tuple[int, Union[Expr, int, float, str]]:
     """Read an expression from a sequence of tokens."""
     if len(tokens) == index:
         raise SyntaxError("unexpected EOF")
@@ -262,15 +399,27 @@ def from_tokens(tokens: list, index: int, parent: str) -> Tuple[int, Union[Expr,
         index += 1
 
         # TODO: handle more types here
-        if typ in movable_types and parent in to_be_moved:
-            expr = Movable(typ)
-        elif typ in drawable_types:
+        if typ in drawable_types:
             expr = Drawable(typ)
+        elif typ == "pad":
+            expr = Pad(typ)
+        elif typ == "footprint":
+            expr = Footprint(typ)
+        elif typ == "fp_line":
+            expr = FPLine(typ)
+        elif typ in ["polygon", "filled_polygon"]:
+            expr = Polygon(typ)
+        elif typ == "pts" and parent in to_be_moved and grand_parent not in skip_move:
+            expr = Pts(typ)
+        elif typ in movable_types and parent in to_be_moved:
+            expr = Movable(typ)
+        elif typ == "tstamp":
+            expr = TStamp(typ)
         else:
             expr = Expr(typ)
 
         while tokens[index] != ")":
-            index, sub_expr = from_tokens(tokens, index, expr.name)
+            index, sub_expr = from_tokens(tokens, index, expr.name, parent)
             expr.append(sub_expr)
         index += 1  # remove ')'
 

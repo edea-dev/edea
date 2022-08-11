@@ -10,13 +10,18 @@ from __future__ import annotations
 
 import os
 from itertools import filterfalse, groupby
-from typing import Dict
+from operator import methodcaller
+from typing import Dict, List, Tuple
 from uuid import uuid4
 
 import numpy as np
 
 from .bbox import BoundingBox
-from .parser import Expr, from_str
+from .parser import Expr, from_str, Footprint, Polygon, Movable, TStamp
+
+# top level types to copy over to the new PCB
+copy_parts = ["footprint", "zone", "via", "segment", "arc", "gr_text", "gr_line", "gr_poly", "gr_arc", "gr_circle",
+              "gr_curve", "dimension"]
 
 
 class Schematic:
@@ -117,6 +122,97 @@ class Schematic:
             )
 
 
+class PCB:
+    """ PCB
+    Representation of a kicad PCB
+    """
+    _pcb: Expr
+    file_name: str
+    name: str
+
+    def __init__(self, pcb: Expr, name: str, file_name: str):
+        self._pcb = pcb
+        self.name = name
+        self.file_name = file_name
+
+    def as_expr(self) -> Expr:
+        """ return the schematic as an Expr """
+        return self._pcb
+
+    def bounding_box(self) -> BoundingBox:
+        """ bounding_box calculates and returns the BoundingBox of a PCB
+        """
+        flatten = lambda l: sum(map(flatten, l), []) if isinstance(l, list) else [l]
+
+        footprints = flatten(
+            self._pcb.apply(Footprint, methodcaller("bounding_box")))  # return value is a list of single element lists
+        polygons = flatten(self._pcb.apply(Polygon, methodcaller("bounding_box")))
+
+        all_boxes = []
+        all_boxes.extend(footprints)
+        all_boxes.extend(polygons)
+
+        outer = BoundingBox([])
+
+        # add bounding boxes together
+        for box in all_boxes:
+            outer.envelop(box.corners)
+
+        return outer
+
+    def move(self, x: float, y: float):
+        """ move a pcb with relative coordinates
+        """
+        self._pcb.apply(Movable, methodcaller("move_xy", x, y))
+
+    def append(self, pcbs: List[Tuple[str, PCB]]):
+        """
+        append merges one or more PCBs into the current one. it also takes a UUID per PCB
+        which is prepended to the path of symbols/footprints
+        """
+        # step 1: get nets, merge and rename them
+
+        # TODO: actually do it
+
+        # step 2: arrange pcbs
+        # move initial pcb to origin coordinates
+        target_box = self.bounding_box()
+        self.move(-target_box.min_x, -target_box.min_y)
+
+        # step 3: merge
+        for path_uuid, pcb in pcbs:
+            target_box = self.bounding_box()
+            pcb_box = pcb.bounding_box()
+
+            # move the new PCB 20 units to the right of the previous one
+            pcb.move(-pcb_box.min_x + target_box.max_x + 20.0, -pcb_box.min_y)
+
+            # TODO: arrange the PCBs within rows and columns, but for this we would need to calculate all placements
+            #       beforehand.
+
+            expr = pcb.as_expr()
+
+            # prepend paths and randomize "tstamp" values
+            expr.apply(Footprint, methodcaller("prepend_path", path_uuid))
+            expr.apply(TStamp, methodcaller("randomize"))
+
+            for part in copy_parts:
+                if hasattr(expr, part):
+                    print(f"getting {part}")
+                    sub_expr = expr.__getattr__(part)
+
+                    # if it's a single occurrence we can just append it, otherwise extend the parent
+                    if isinstance(sub_expr, list):
+                        self._pcb.data.extend(sub_expr)
+                    elif isinstance(sub_expr, dict):
+                        self._pcb.extend(sub_expr.values())
+                    else:
+                        self._pcb.data.extend(sub_expr)
+
+        # refresh known attributes, etc
+        self._pcb.parsed()
+
+
 class Project:
     """KiCAD project
     nya
@@ -127,13 +223,15 @@ class Project:
     symbol_instances = {}
     top: str
     sheets: int  # sheets is the amount of schematics including all instances of sub-schematics
+    pcb: PCB
 
-    def __init__(self, file_name) -> None:
-        self.file_name = file_name
+    def __init__(self, sch_file_name: str, pcb_file_name: str) -> None:
+        self.sch_file_name = sch_file_name
+        self.pcb_file_name = pcb_file_name
 
     def parse(self):
-        """parse the base schematic"""
-        with open(self.file_name, encoding="utf-8") as sch_file:
+        """parse the base schematic and PCB file"""
+        with open(self.sch_file_name, encoding="utf-8") as sch_file:
             sch = from_str(sch_file.read())
 
         # loop through symbol instances and extract a tree for uuid to reference
@@ -153,7 +251,11 @@ class Project:
                     self.symbol_instances[symbol_id] = [reference]
 
         self.top = sch.uuid[0]
-        self._parse_sheet(sch, self.file_name)
+        self._parse_sheet(sch, self.sch_file_name)
+
+        # parse the PCB
+        with open(self.pcb_file_name, encoding="utf-8") as pcb_file:
+            self.pcb = PCB(from_str(pcb_file.read()), "", self.pcb_file_name)
 
     def _parse_sheet(self, sch: Expr, file_name: str):
         """recursively parse schematic sub-sheets"""
@@ -161,7 +263,7 @@ class Project:
         self.schematics[uuid] = Schematic(sch, "", file_name)
         self.fn_to_uuid[os.path.basename(file_name)] = uuid
 
-        dir_name = os.path.dirname(self.file_name)
+        dir_name = os.path.dirname(self.sch_file_name)
 
         if not hasattr(sch, "sheet"):
             return
@@ -213,7 +315,15 @@ class Project:
 
             bom_parts[sym.uuid[0]] = properties
 
-        bom = {"count_part": len(parts), "count_unique": len(unique_keys), "parts": bom_parts, "sheets": self.sheets, }
+        box = self.pcb.bounding_box()
+
+        copper_layers = 0
+        for layer in self.pcb.as_expr().layers:
+            if layer[0].endswith('.Cu"'):
+                copper_layers += 1
+
+        bom = {"count_part": len(parts), "count_unique": len(unique_keys), "parts": bom_parts, "sheets": self.sheets,
+               "area": box.area, "width": box.width, "height": box.height, "copper_layers": copper_layers}
 
         return bom
 
