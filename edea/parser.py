@@ -31,7 +31,7 @@ movable_types = ["at", "xy", "start", "end", "center", "mid"]
 
 drawable_types = ["pin", "polyline", "rectangle"]
 lib_symbols = {}
-TOKENIZE_EXPR = re.compile(r'("[^"]*"|\(|\)|"|[^\s()"]+)')
+TOKENIZE_EXPR = re.compile(r'("[^"\\]*(?:\\.[^"\\]*)*"|\(|\)|"|[^\s()"]+)')
 
 
 @dataclass
