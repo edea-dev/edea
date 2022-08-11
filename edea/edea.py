@@ -24,6 +24,10 @@ copy_parts = ["footprint", "zone", "via", "segment", "arc", "gr_text", "gr_line"
               "gr_curve", "dimension"]
 
 
+class VersionError(Exception):
+    pass
+
+
 class Schematic:
     """ Schematic
     Representation of a kicad schematic
@@ -234,6 +238,9 @@ class Project:
         with open(self.sch_file_name, encoding="utf-8") as sch_file:
             sch = from_str(sch_file.read())
 
+        if sch.version[0] < 20211123:
+            raise VersionError(f"kicad file format versions pre-6.0.0 are unsupported")
+
         # loop through symbol instances and extract a tree for uuid to reference
         if hasattr(sch, "symbol_instances"):
             for path in sch.symbol_instances:
@@ -268,12 +275,31 @@ class Project:
         if not hasattr(sch, "sheet"):
             return
 
-        for sheet in sch.sheet:
-            prop = sheet.property
-            sheet_file = prop["Sheet file"][1].strip('"')
+        sheets = sch.sheet
+
+        # check if it's a single sheet or multiple
+        if sheets[0].name != "sheet":
+            sheets = [sheets]
+
+        for sheet in sheets:
+            try:
+                prop = sheet.property
+            except AttributeError as e:
+                print(str(sheet))
+                raise e
+
+            if "Sheet file" in prop:
+                sheet_file_key = "Sheet file"
+            elif "Sheetfile" in prop:
+                sheet_file_key = "Sheetfile"
+            elif "Fichier de feuille" in prop:
+                sheet_file_key = "Fichier de feuille"
+            else:
+                raise ValueError(f"unknown property key for sheet file")
+
+            sheet_file = prop[sheet_file_key][1].strip('"')
             if os.path.basename(sheet_file) not in self.fn_to_uuid:
                 with open(os.path.join(dir_name, sheet_file), encoding="utf-8") as sch_file:
-                    print(f"reading {sheet_file}")
                     sub = from_str(sch_file.read())
 
                 self._parse_sheet(sub, sheet_file)
