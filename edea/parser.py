@@ -323,19 +323,57 @@ class Drawable(Movable):
         elif self.name == "polyline":
             frag = '<polyline points="'
             for point in self.data[0]:
-                frag += f"{point.data[0]},{point.data[1]} "
-            # TODO: stroke and fill
-            print(f'{frag}" />')
+                # rounding is necessary because otherwise you get 
+                # numbers ending with .9999999999 due to floating point precision :/
+                frag += f"{round(point.data[0] + position[0], 3)},{round(point.data[1] + position[1], 3)} "
+            return f'{frag}" {self.parse_visual()}/>'
         elif self.name == "rectangle":
             x_start = self.start[0]
             y_start = self.start[1]
             x_end = self.end[0]
             y_end = self.end[1]
-            print(
-                f'<rect x="{x_start + position[0]}" y="{y_start + position[1]}" width="{x_start - x_end}" height="{y_start - y_end}" />')
+            return (
+                f'<rect x="{round(x_start + position[0], 3)}" y="{round(y_start + position[1], 3)}" '
+                f'width="{round(x_end - x_start, 3)}" height="{round(y_end - y_start, 3)}" {self.parse_visual()}/>'   
+            )
         else:
             raise NotImplementedError(self.name)
 
+    def parse_visual(self):
+        """parse fill/stroke, if present"""
+        attrs = ""
+        if hasattr(self, 'stroke'):
+            color, opacity = parse_color(self.stroke.color)
+            attrs += f'stroke="rgb({color})" stroke-opacity="{opacity}" stroke-width="{self.stroke.width[0]}" '
+            
+            match self.stroke.type[0]:
+                case ("default"|"solid"):
+                    pass
+                case "dot":
+                    attrs += 'stroke-dasharray="1" '
+                case "dash":
+                    attrs += 'stroke-dasharray="3 1" '
+                case "dash_dot":
+                    attrs += 'stroke-dasharray="3 1 1 1" '
+                case "dash_dot_dot":
+                    attrs += 'stroke-dasharray="3 1 1 1 1 1" '
+        if hasattr(self, 'fill'):
+            match self.fill.type[0]:
+                case "none":
+                    attrs += 'fill="none" '
+                case "background":
+                    # TODO: figure out how to access theme background
+                    pass
+                case "outline":
+                    color, opacity = parse_color(self.stroke.color)
+                    attrs += f'fill="rgb({color})" fill-opacity="{opacity}" '
+        return attrs
+        
+
+def parse_color(color: list):
+        """converts `r g b a` to a tuple of `(r,g,b)` and `alpha`"""
+        return (f"{color[0]},{color[1]},{color[2]}", color[3])
+    
 
 @dataclass(init=False)
 class TStamp(Expr):
