@@ -29,7 +29,7 @@ skip_move = ["primitives"]
 # types which should be moved if their parent is in the set of "to_be_moved"
 movable_types = ["at", "xy", "start", "end", "center", "mid"]
 
-drawable_types = ["pin", "polyline", "rectangle"]
+drawable_types = ["pin", "polyline", "rectangle", "wire"]
 lib_symbols = {}
 TOKENIZE_EXPR = re.compile(r'("[^"\\]*(?:\\.[^"\\]*)*"|\(|\)|"|[^\s()"]+)')
 
@@ -71,7 +71,6 @@ class Expr(UserList):
         to call an instance method, just use e.g. v.apply(Pad, methodcaller("move_xy", x, y))
         """
         vals = []
-        ret = None
 
         if isinstance(self, cls):
             ret = func(self)
@@ -110,7 +109,7 @@ class Expr(UserList):
         this is much less verbose and conveys intent instantly.
         """
         if name not in self._known_attrs:
-            raise AttributeError(f"no attribute {name} in {self.name}")
+            return UserList.__getattribute__(self, name)
 
         if name not in self._more_than_once:
             for item in self.data:
@@ -334,8 +333,13 @@ class Drawable(Movable):
             y_end = self.end[1]
             return (
                 f'<rect x="{round(x_start + position[0], 3)}" y="{round(y_start + position[1], 3)}" '
-                f'width="{round(x_end - x_start, 3)}" height="{round(y_end - y_start, 3)}" {self.parse_visual()}/>'   
+                f'width="{round(x_end - x_start, 3)}" height="{round(y_end - y_start, 3)}" {self.parse_visual()}/>'
             )
+        elif self.name == "wire":
+            frag = '<polyline points="'
+            for point in self.data[0]:
+                frag += f"{point.data[0]},{point.data[1]} "
+            return f'{frag}" {self.parse_visual()}/>'
         else:
             raise NotImplementedError(self.name)
 
@@ -344,7 +348,16 @@ class Drawable(Movable):
         attrs = ""
         if hasattr(self, 'stroke'):
             color, opacity = parse_color(self.stroke.color)
-            attrs += f'stroke="rgb({color})" stroke-opacity="{opacity}" stroke-width="{self.stroke.width[0]}" '
+
+            # in kicad 0 usually means default
+            if opacity == 0:
+                opacity = 1
+
+            stroke_width = self.stroke.width[0]
+            if stroke_width == 0:
+                stroke_width = 0.1524 # kicad default stroke width
+
+            attrs += f'stroke="rgb({color})" stroke-opacity="{opacity}" stroke-width="{stroke_width}" '
             
             match self.stroke.type[0]:
                 case ("default"|"solid"):

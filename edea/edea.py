@@ -17,7 +17,7 @@ from uuid import uuid4
 import numpy as np
 
 from .bbox import BoundingBox
-from .parser import Expr, from_str, Footprint, Polygon, Movable, TStamp
+from .parser import Expr, from_str, Footprint, Polygon, Movable, TStamp, Drawable
 
 # top level types to copy over to the new PCB
 copy_parts = ["footprint", "zone", "via", "segment", "arc", "gr_text", "gr_line", "gr_poly", "gr_arc", "gr_circle",
@@ -124,6 +124,45 @@ class Schematic:
             self._sch.sheet_instances.append(
                 Expr("path", f'"/{sheet.uuid}"', Expr("page", f'"{new_page}"')),
             )
+
+    def draw(self) -> list:
+        svg_header = """<svg version="1.1" width="297mm" height="210mm" xmlns="http://www.w3.org/2000/svg">
+<g style="fill:#000000; fill-opacity:1.000000;stroke:#000000; stroke-opacity:1.000000;
+stroke-linecap:round; stroke-linejoin:round;"
+ transform="translate(0 0) scale(1 1)">
+</g>
+<g style="fill:#840000; fill-opacity:0.0; 
+stroke:#840000; stroke-width:0.000000; stroke-opacity:1; 
+stroke-linecap:round; stroke-linejoin:round;">
+</g>
+<g style="fill:#840000; fill-opacity:0.0; 
+stroke:#840000; stroke-width:60.000000; stroke-opacity:1; 
+stroke-linecap:round; stroke-linejoin:round;">"""
+        lines = []
+        lines.append(svg_header)
+
+
+        for sym in self._sch.symbol:
+            sym_name = sym.lib_id[0].strip('"')
+
+            lines.append(f"<!--drawing {sym_name} -->")
+
+            for expr in self._sch.lib_symbols.symbol[sym_name]:
+                # loop the inner symbol once more
+                if isinstance(expr, Expr) and expr.name == "symbol":
+                    # loop the inner symbol
+                    for e in expr:
+                        if isinstance(e, Drawable):
+                            lines.append(e.draw(sym.at))
+                elif isinstance(expr, Drawable): # draw instances which aren't symbols
+                    lines.append(expr.draw(sym.at))
+
+        lines.append(f"<!--drawing wires -->")
+        for wire in self._sch.wire:
+            lines.append(wire.draw(()))
+
+        lines.append('</svg>')
+        return lines
 
 
 class PCB:
