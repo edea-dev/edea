@@ -6,12 +6,12 @@ SPDX-License-Identifier: EUPL-1.2
 from __future__ import annotations
 
 import re
+from _operator import methodcaller
 from collections import UserList
 from dataclasses import dataclass
 from math import tau, cos, sin
 from typing import Tuple, Union, Dict
 from uuid import uuid4, UUID
-from _operator import methodcaller
 
 import numpy as np
 
@@ -316,6 +316,8 @@ class Drawable(Movable):
 
     def draw(self, position: Tuple[float, float]):
         """draw the shape with the given offset"""
+        scale_factor = 3.78  # pixels per mm, 96 dpi / 25.4mm
+
         if self.name == "pin":
             # raise NotImplementedError(self.name)
             pass
@@ -324,7 +326,7 @@ class Drawable(Movable):
             for point in self.data[0]:
                 # rounding is necessary because otherwise you get 
                 # numbers ending with .9999999999 due to floating point precision :/
-                frag += f"{round(point.data[0] + position[0], 3)},{round(point.data[1] + position[1], 3)} "
+                frag += f"{round((point.data[0] + position[0]) * scale_factor, 3)},{round((point.data[1] + position[1]) * scale_factor, 3)} "
             return f'{frag}" {self.parse_visual()}/>'
         elif self.name == "rectangle":
             x_start = self.start[0]
@@ -332,13 +334,13 @@ class Drawable(Movable):
             x_end = self.end[0]
             y_end = self.end[1]
             return (
-                f'<rect x="{round(x_start + position[0], 3)}" y="{round(y_start + position[1], 3)}" '
-                f'width="{round(x_end - x_start, 3)}" height="{round(y_end - y_start, 3)}" {self.parse_visual()}/>'
+                f'<rect x="{round(x_start + position[0], 3)}mm" y="{round(y_start + position[1], 3)}mm" '
+                f'width="{round(x_end - x_start, 3)}mm" height="{round(y_end - y_start, 3)}mm" {self.parse_visual()}/>'
             )
         elif self.name == "wire":
             frag = '<polyline points="'
             for point in self.data[0]:
-                frag += f"{point.data[0]},{point.data[1]} "
+                frag += f"{round(point.data[0] * scale_factor, 3)},{round(point.data[1] * scale_factor, 3)} "
             return f'{frag}" {self.parse_visual()}/>'
         else:
             raise NotImplementedError(self.name)
@@ -355,12 +357,12 @@ class Drawable(Movable):
 
             stroke_width = self.stroke.width[0]
             if stroke_width == 0:
-                stroke_width = 0.1524 # kicad default stroke width
+                stroke_width = 0.1524  # kicad default stroke width
 
-            attrs += f'stroke="rgb({color})" stroke-opacity="{opacity}" stroke-width="{stroke_width}" '
-            
+            attrs += f'stroke="rgb({color})" stroke-opacity="{opacity}" stroke-width="{stroke_width}mm" '
+
             match self.stroke.type[0]:
-                case ("default"|"solid"):
+                case ("default" | "solid"):
                     pass
                 case "dot":
                     attrs += 'stroke-dasharray="1" '
@@ -381,12 +383,12 @@ class Drawable(Movable):
                     color, opacity = parse_color(self.stroke.color)
                     attrs += f'fill="rgb({color})" fill-opacity="{opacity}" '
         return attrs
-        
+
 
 def parse_color(color: list):
-        """converts `r g b a` to a tuple of `(r,g,b)` and `alpha`"""
-        return (f"{color[0]},{color[1]},{color[2]}", color[3])
-    
+    """converts `r g b a` to a tuple of `(r,g,b)` and `alpha`"""
+    return (f"{color[0]},{color[1]},{color[2]}", color[3])
+
 
 @dataclass(init=False)
 class TStamp(Expr):
