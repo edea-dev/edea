@@ -1,0 +1,3 @@
+[submodule "tests/kicad_projects/kicad6-test-files"]
+	path = tests/kicad_projects/kicad6-test-files
+	url = https://gitlab.com/edea-dev/kicad6-test-files.git/
