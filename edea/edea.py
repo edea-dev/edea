@@ -126,18 +126,7 @@ class Schematic:
             )
 
     def draw(self) -> list:
-        svg_header = """<svg version="1.1" width="297mm" height="210mm" xmlns="http://www.w3.org/2000/svg">
-<g style="fill:#000000; fill-opacity:1.000000;stroke:#000000; stroke-opacity:1.000000;
-stroke-linecap:round; stroke-linejoin:round;"
- transform="translate(0 0) scale(1 1)">
-</g>
-<g style="fill:#840000; fill-opacity:0.0; 
-stroke:#840000; stroke-width:0.000000; stroke-opacity:1; 
-stroke-linecap:round; stroke-linejoin:round;">
-</g>
-<g style="fill:#840000; fill-opacity:0.0; 
-stroke:#840000; stroke-width:60.000000; stroke-opacity:1; 
-stroke-linecap:round; stroke-linejoin:round;">"""
+        svg_header = """<svg version="2.0" width="297mm" height="210mm" xmlns="http://www.w3.org/2000/svg">"""
         lines = []
         lines.append(svg_header)
 
@@ -154,12 +143,30 @@ stroke-linecap:round; stroke-linejoin:round;">"""
                     for e in expr:
                         if isinstance(e, Drawable):
                             lines.append(e.draw(sym.at))
-                elif isinstance(expr, Drawable): # draw instances which aren't symbols
+                elif isinstance(expr, Drawable) and expr.name not in ["property"]: # draw instances which aren't symbols
                     lines.append(expr.draw(sym.at))
+
+            for expr in sym:
+                if isinstance(expr, Drawable):
+                    lines.append(expr.draw((0, 0, sym.at[2])))
 
         lines.append(f"<!--drawing wires -->")
         for wire in self._sch.wire:
             lines.append(wire.draw(()))
+
+        lines.append(f"<!--drawing junk -->")
+        for j in self._sch.junction:
+            lines.append(j.draw(()))
+
+        lines.append(f"<!--drawing text -->")
+        for t in self._sch:
+            if t.name == "text":
+                lines.append(t.draw(()))
+
+        lines.append(f"<!--drawing labels -->")
+        for t in self._sch:
+            if t.name == "label":
+                lines.append(t.draw(()))
 
         lines.append('</svg>')
         return lines

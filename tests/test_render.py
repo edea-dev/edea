@@ -5,6 +5,7 @@ SPDX-License-Identifier: EUPL-1.2
 """
 
 from edea.parser import from_str
+from edea.edea import Schematic
 
 
 class TestRendering:
@@ -18,7 +19,7 @@ class TestRendering:
             "(rectangle (start -5.08 -5.08) (end 5.08 1.905) (stroke (width 0.254) (type default) (color 120 85 0 0.5)) (fill (type background))))")
 
         assert expr.draw((20,
-                          10)) == '<rect x="14.92mm" y="4.92mm" width="10.16mm" height="6.985mm" stroke="rgb(120,85,0)" stroke-opacity="0.5" stroke-width="0.254mm" />'
+                          10)) == '<rect x="14.92mm" y="4.92mm" width="10.16mm" height="6.985mm" stroke="rgb(120,85,0)" stroke-opacity="0.5" stroke-width="0.254mm" fill="none" />'
 
     def test_draw_polyline(self):
         expr = from_str(
@@ -36,13 +37,10 @@ class TestRendering:
 
     # def test_draw_pin(self):
 
-
-"""
     def test_draw_symbol(self):
-        with open("tests/kicad_projects/ferret/ferret.kicad_sch") as f:
+        with open("tests/kicad_projects/ferret/control.kicad_sch") as f:
             sch = Schematic(from_str(f.read()), "3v3ldo", "")
 
         lines = sch.draw()
         with open("test_schematic.svg", 'w') as f:
             f.write("\n".join([l for l in lines if l is not None]))
-"""

@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import re
 from _operator import methodcaller
-from collections import UserList
+from collections import UserList, UserDict
 from dataclasses import dataclass
-from math import tau, cos, sin
+from math import radians, degrees
+from math import tau, cos, sin, acos
 from typing import Tuple, Union, Dict
 from uuid import uuid4, UUID
 
@@ -29,7 +30,7 @@ skip_move = ["primitives"]
 # types which should be moved if their parent is in the set of "to_be_moved"
 movable_types = ["at", "xy", "start", "end", "center", "mid"]
 
-drawable_types = ["pin", "polyline", "rectangle", "wire"]
+drawable_types = ["pin", "polyline", "rectangle", "wire", "property", "hierarchical_label", "junction", "text", "label"]
 lib_symbols = {}
 TOKENIZE_EXPR = re.compile(r'("[^"\\]*(?:\\.[^"\\]*)*"|\(|\)|"|[^\s()"]+)')
 
@@ -141,7 +142,8 @@ class Expr(UserList):
     def __eq__(self, other) -> bool:
         """Overrides the default implementation"""
         if len(self.data) != 1:
-            raise NotImplementedError
+            return self.name == other
+            # raise NotImplementedError
 
         if other is True or other is False:
             return self[0] == "yes" and other
@@ -305,6 +307,37 @@ class Footprint(Expr):
         self.path.data[0] = f"\"/{path}{sub}\""
 
 
+@dataclass()
+class Elem(UserDict):
+
+    def __init__(self, typ: str, inner=None, *args) -> None:
+        """ __init__
+        """
+        # TODO: inner element text
+        super().__init__()
+        self.typ = typ
+        self.inner = ""
+
+    def append(self, key: str, value: str):
+        """ creates and/or appends value to the given key
+        """
+        if key in self.data:
+            self.data[key].append(value)
+        else:
+            self.data[key] = [value]
+
+    def to_string(self) -> str:
+        attrs = []
+        for key, values in self.data.items():
+            v = ' '.join(values)
+            attrs.append(f'{key}="{v}"')
+        all_attrs = ' '.join(attrs)
+        if self.inner == "":
+            return f'<{self.typ} {all_attrs} />'
+        else:
+            return f'<{self.typ} {all_attrs}>{self.inner}</{self.typ}>'
+
+
 @dataclass(init=False)
 class Drawable(Movable):
     """
@@ -314,40 +347,105 @@ class Drawable(Movable):
     rectangle: usually ic symbols
     """
 
-    def draw(self, position: Tuple[float, float]):
+    scale_factor = 3.78  # pixels per mm, 96 dpi / 25.4mm
+    svg_precision = 4
+
+    def _scale(self, value) -> float:
+        return round(value * self.scale_factor, self.svg_precision)
+
+    def draw(self, position: Tuple[float, float] | Tuple[float, float, float]):
         """draw the shape with the given offset"""
-        scale_factor = 3.78  # pixels per mm, 96 dpi / 25.4mm
+        node = Elem(self.name)
+        self.parse_visual(node, position)
+
+        # if len(position) == 3 and position[2] != 0:
+        #    attrs.append(f'transform="rotate({position[2]})"')
 
         if self.name == "pin":
             # raise NotImplementedError(self.name)
-            pass
+            return None
         elif self.name == "polyline":
-            frag = '<polyline points="'
             for point in self.data[0]:
                 # rounding is necessary because otherwise you get 
                 # numbers ending with .9999999999 due to floating point precision :/
-                frag += f"{round((point.data[0] + position[0]) * scale_factor, 3)},{round((point.data[1] + position[1]) * scale_factor, 3)} "
-            return f'{frag}" {self.parse_visual()}/>'
+                node.append("points",
+                            f"{self._scale(position[0] + point.data[0])},{self._scale(position[1] - point.data[1])}")
         elif self.name == "rectangle":
-            x_start = self.start[0]
-            y_start = self.start[1]
-            x_end = self.end[0]
-            y_end = self.end[1]
-            return (
-                f'<rect x="{round(x_start + position[0], 3)}mm" y="{round(y_start + position[1], 3)}mm" '
-                f'width="{round(x_end - x_start, 3)}mm" height="{round(y_end - y_start, 3)}mm" {self.parse_visual()}/>'
-            )
+            node.typ = "rect"
+            xc, yc = [self.start[0], self.end[0]], [self.start[1], self.end[1]]
+            width = max(xc) - min(xc)
+            height = max(yc) - min(yc)
+            x_mid = (self.start[0] + self.end[0]) / 2
+            y_mid = (self.start[1] + self.end[1]) / 2
+            svgx = min(position[0] + self.start[0], position[0] + self.end[0])
+            svgy = min(position[1] - self.start[1], position[1] - self.end[1])
+
+            node.append("x", f'{round(svgx, self.svg_precision)}mm')
+            node.append("y", f'{round(svgy, self.svg_precision)}mm')
+            node.append("width", f'{round(width, self.svg_precision)}mm')
+            node.append("height", f'{round(height, self.svg_precision)}mm')
         elif self.name == "wire":
-            frag = '<polyline points="'
+            node.typ = "polyline"
             for point in self.data[0]:
-                frag += f"{round(point.data[0] * scale_factor, 3)},{round(point.data[1] * scale_factor, 3)} "
-            return f'{frag}" {self.parse_visual()}/>'
+                node.append("points", f"{self._scale(point.data[0])},{self._scale(point.data[1])}")
+        elif self.name in ["property", "hierarchical_label", "text", "label"]:
+            node.typ = "text"
+            has_effects = hasattr(self, "effects")
+
+            # check if it's hidden
+            if has_effects and "hide" in self.effects:
+                return None
+
+            text = self.data[0].strip('"')
+            if self.name == "property":
+                text = self.data[1].strip('"')  # property is key, value and we only display the value
+
+            anchor = "middle"
+
+            x_mid = self.at[0]
+
+            font_size = 1.27  # default font size
+            if has_effects and hasattr(self.effects, "font"):
+                if hasattr(self.effects.font, "size"):
+                    font_size = self.effects.font.size[0]
+                if hasattr(self.effects, "justify"):
+                    if self.effects.justify[0] == "left":
+                        anchor = "start"
+                        # x_mid -= len(text)/2 * font_size
+                    elif self.effects.justify[0] == "middle":
+                        anchor = "center"
+                    elif self.effects.justify[0] == "right":
+                        anchor = "end"
+                        x_mid += len(text) / 2 * font_size
+
+            node.append("text-anchor", anchor)
+
+            y = self.at[1]
+            if self.name in ["property", "hierarchical_label"]:
+                y += font_size / 2
+
+            if len(position) > 0 and position[0] != 0 and position[1] != 0:
+                x_mid = position[0] + x_mid
+                y = position[1] - y
+
+            node.append("font-family", "monospace")
+
+            # node.append("transform-origin", f'{self._scale(x_mid)}, {self._scale(y)}')
+            node.append("x", f"{self._scale(x_mid)}")
+            node.append("y", f"{self._scale(y)}")
+
+            node.append("font-size", f'{self._scale(font_size)}px')
+            node.inner = text
+        elif self.name == "junction":
+            return f'<circle cx="{self._scale(self.at[0])}" cy="{self._scale(self.at[1])}" r="1.1" fill="green" stroke="green" stroke-width="1" />'
         else:
             raise NotImplementedError(self.name)
 
-    def parse_visual(self):
+        return node.to_string()
+
+    def parse_visual(self, node: Elem, at) -> None:
         """parse fill/stroke, if present"""
-        attrs = ""
+        attrs = []
         if hasattr(self, 'stroke'):
             color, opacity = parse_color(self.stroke.color)
 
@@ -359,30 +457,55 @@ class Drawable(Movable):
             if stroke_width == 0:
                 stroke_width = 0.1524  # kicad default stroke width
 
-            attrs += f'stroke="rgb({color})" stroke-opacity="{opacity}" stroke-width="{stroke_width}mm" '
+            node.append("stroke", f"rgb({color})")
+            node.append("stroke-opacity", f"{opacity}")
+            node.append("stroke-width", f"{stroke_width}mm")
 
             match self.stroke.type[0]:
                 case ("default" | "solid"):
                     pass
                 case "dot":
-                    attrs += 'stroke-dasharray="1" '
+                    node.append("stroke-dasharray", "1")
                 case "dash":
-                    attrs += 'stroke-dasharray="3 1" '
+                    node.append("stroke-dasharray", "3 1")
                 case "dash_dot":
-                    attrs += 'stroke-dasharray="3 1 1 1" '
+                    node.append("stroke-dasharray", "3 1 1 1")
                 case "dash_dot_dot":
-                    attrs += 'stroke-dasharray="3 1 1 1 1 1" '
+                    node.append("stroke-dasharray", "3 1 1 1 1 1")
+
         if hasattr(self, 'fill'):
             match self.fill.type[0]:
                 case "none":
-                    attrs += 'fill="none" '
+                    node.append("fill", "none")
                 case "background":
                     # TODO: figure out how to access theme background
-                    pass
+                    node.append("fill", "none")
                 case "outline":
                     color, opacity = parse_color(self.stroke.color)
-                    attrs += f'fill="rgb({color})" fill-opacity="{opacity}" '
-        return attrs
+                    node.append("fill", f"rgb({color})")
+                    node.append("fill-opacity", f"{opacity}")
+
+        if hasattr(self, "at") and len(self.at) > 2 and self.at[2] != 0:
+            angle = self.at[2]
+
+            # TODO: if type is label and angle 180, don't rotate but anchor at end of text instead of start
+
+            if len(at) == 3:
+                angle += at[2]
+
+            angle = angle % 360
+
+            x = self.at[0]
+            y = self.at[1]
+            vector_length = np.sqrt(x ** 2 + y ** 2)
+            if vector_length > 0:
+                original_angle = degrees(acos(x / vector_length))
+            else:
+                original_angle = 0
+            offset_y = vector_length * sin(radians(original_angle - angle))
+            offset_x = vector_length * cos(radians(original_angle - angle))
+            self.at = (offset_x, offset_y, angle)
+            node.append("transform", f"rotate({angle})")
 
 
 def parse_color(color: list):
