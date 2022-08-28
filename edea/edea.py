@@ -17,7 +17,8 @@ from uuid import uuid4
 import numpy as np
 
 from .bbox import BoundingBox
-from .parser import Expr, from_str, Footprint, Polygon, Movable, TStamp, Drawable
+from .parser import (Drawable, Expr, Footprint, FPLine, Movable, Polygon,
+                     TStamp, from_str)
 
 # top level types to copy over to the new PCB
 copy_parts = ["footprint", "zone", "via", "segment", "arc", "gr_text", "gr_line", "gr_poly", "gr_arc", "gr_circle",
@@ -130,7 +131,6 @@ class Schematic:
         lines = []
         lines.append(svg_header)
 
-
         for sym in self._sch.symbol:
             sym_name = sym.lib_id[0].strip('"')
 
@@ -143,7 +143,8 @@ class Schematic:
                     for e in expr:
                         if isinstance(e, Drawable):
                             lines.append(e.draw(sym.at))
-                elif isinstance(expr, Drawable) and expr.name not in ["property"]: # draw instances which aren't symbols
+                elif isinstance(expr, Drawable) and expr.name not in [
+                    "property"]:  # draw instances which aren't symbols
                     lines.append(expr.draw(sym.at))
 
             for expr in sym:
@@ -197,16 +198,19 @@ class PCB:
         footprints = flatten(
             self._pcb.apply(Footprint, methodcaller("bounding_box")))  # return value is a list of single element lists
         polygons = flatten(self._pcb.apply(Polygon, methodcaller("bounding_box")))
+        fp_line = flatten(self._pcb.apply(FPLine, methodcaller("bounding_box")))
 
         all_boxes = []
         all_boxes.extend(footprints)
         all_boxes.extend(polygons)
+        all_boxes.extend(fp_line)
 
         outer = BoundingBox([])
 
         # add bounding boxes together
         for box in all_boxes:
-            outer.envelop(box.corners)
+            if box is not None:
+                outer.envelop(box.corners)
 
         return outer
 

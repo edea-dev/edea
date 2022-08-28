@@ -6,15 +6,14 @@ SPDX-License-Identifier: EUPL-1.2
 from __future__ import annotations
 
 import re
-from _operator import methodcaller
-from collections import UserList, UserDict
+from collections import UserDict, UserList
 from dataclasses import dataclass
-from math import radians, degrees
-from math import tau, cos, sin, acos
-from typing import Tuple, Union, Dict
-from uuid import uuid4, UUID
+from math import acos, cos, degrees, radians, sin, tau
+from typing import Dict, Tuple, Union
+from uuid import UUID, uuid4
 
 import numpy as np
+from _operator import methodcaller
 
 from .bbox import BoundingBox
 
@@ -230,6 +229,11 @@ class FPLine(Expr):
         points = np.array([[self.start[0], self.start[1]], [self.end[0], self.end[1]]],
                           dtype=np.float64)
         return points
+
+    def bounding_box(self) -> BoundingBox:
+        """ bounding_box of the fp_line
+        """
+        return BoundingBox(self.corners())
 
 
 @dataclass(init=False)
