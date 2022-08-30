@@ -15,7 +15,7 @@ test_projects = {
     "ferret": {
         "count_part": 134,
         "count_unique": 115,
-        "area": 2500.0
+        "area": 26205.075
     }
 }
 
@@ -23,22 +23,22 @@ test_projects = {
 class TestPCB:
     def test_boundingbox(self):
         for proj_name, context in test_projects.items():
-            fn = get_path_to_test_project(proj_name, "kicad_pcb")
-            with open(fn) as f:
-                s = f.read()
-            pcb = PCB(from_str(s), proj_name, fn)
+            file_name = get_path_to_test_project(proj_name, "kicad_pcb")
+            with open(file_name, encoding="utf-8") as f:
+                contents = f.read()
+            pcb = PCB(from_str(contents), proj_name, file_name)
 
             bb = pcb.bounding_box()
 
             assert bb.area == context["area"]
 
     def test_merge_pcb(self):
-        fn = get_path_to_test_project("3v3ldo", "kicad_pcb")
-        with open(fn) as f:
-            s = f.read()
-        pcb = PCB(from_str(s), "3v3ldo", fn)
-        pcb2 = PCB(from_str(s), "3v3ldo", fn)
-        pcb3 = PCB(from_str(s), "3v3ldo", fn)
+        file_name = get_path_to_test_project("3v3ldo", "kicad_pcb")
+        with open(file_name, encoding="utf-8") as f:
+            contents = f.read()
+        pcb = PCB(from_str(contents), "3v3ldo", file_name)
+        pcb2 = PCB(from_str(contents), "3v3ldo", file_name)
+        pcb3 = PCB(from_str(contents), "3v3ldo", file_name)
 
         pcb.append([(str(uuid4()), pcb2), (str(uuid4()), pcb3)])
 

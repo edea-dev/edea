@@ -6,6 +6,7 @@ SPDX-License-Identifier: EUPL-1.2
 from __future__ import annotations
 
 import re
+from _operator import methodcaller
 from collections import UserDict, UserList
 from dataclasses import dataclass
 from math import acos, cos, degrees, radians, sin, tau
@@ -13,7 +14,6 @@ from typing import Dict, Tuple, Union
 from uuid import UUID, uuid4
 
 import numpy as np
-from _operator import methodcaller
 
 from .bbox import BoundingBox
 
@@ -22,14 +22,37 @@ Number = (int, float)
 Atom = (Symbol, Number)
 
 # types which have children with absolute coordinates
-to_be_moved = ["footprint", "gr_text", "gr_poly", "gr_line", "gr_arc", "via", "segment", "dimension", "gr_circle",
-               "gr_curve", "arc", "polygon", "filled_polygon"]  # pts is handled separately
+to_be_moved = [
+    "footprint",
+    "gr_text",
+    "gr_poly",
+    "gr_line",
+    "gr_arc",
+    "via",
+    "segment",
+    "dimension",
+    "gr_circle",
+    "gr_curve",
+    "arc",
+    "polygon",
+    "filled_polygon",
+]  # pts is handled separately
 skip_move = ["primitives"]
 
 # types which should be moved if their parent is in the set of "to_be_moved"
 movable_types = ["at", "xy", "start", "end", "center", "mid"]
 
-drawable_types = ["pin", "polyline", "rectangle", "wire", "property", "hierarchical_label", "junction", "text", "label"]
+drawable_types = [
+    "pin",
+    "polyline",
+    "rectangle",
+    "wire",
+    "property",
+    "hierarchical_label",
+    "junction",
+    "text",
+    "label",
+]
 lib_symbols = {}
 TOKENIZE_EXPR = re.compile(r'("[^"\\]*(?:\\.[^"\\]*)*"|\(|\)|"|[^\s()"]+)')
 
@@ -37,6 +60,7 @@ TOKENIZE_EXPR = re.compile(r'("[^"\\]*(?:\\.[^"\\]*)*"|\(|\)|"|[^\s()"]+)')
 @dataclass
 class Expr(UserList):
     """Expr lisp-y kicad expressions"""
+
     __slots__ = ("name", "data", "_more_than_once", "_known_attrs")
 
     name: str
@@ -46,7 +70,7 @@ class Expr(UserList):
     _known_attrs: set
 
     def __init__(self, typ: str, *args) -> None:
-        """ __init__ builds a new pin with typ as the type
+        """__init__ builds a new pin with typ as the type
         passing additional arguments will append them to the list and Expr.parsed() will be called afterwards
         to update the internals.
         """
@@ -186,13 +210,14 @@ class Pad(Expr):
     """Pad"""
 
     def corners(self):
-        """Returns a numpy array containing every corner [x,y]
-        """
+        """Returns a numpy array containing every corner [x,y]"""
         if len(self.at) > 2:
             angle = self.at.data[2] / tau
         else:
             angle = 0
-        origin = self.at.data[0:2]  # in this case we explicitly need to access the data list because of the range op
+        origin = self.at.data[
+                 0:2
+                 ]  # in this case we explicitly need to access the data list because of the range op
         # otherwise it would return a list of Expr
 
         if self[2] in ["rect", "roundrect", "oval", "custom"]:
@@ -206,7 +231,10 @@ class Pad(Expr):
             angle_cos = cos(angle)
             angle_sin = sin(angle)
             for i, _ in enumerate(points):
-                points[i] = origin + points[i] * [(w * angle_cos + h * angle_sin), (h * angle_cos + w * angle_sin)]
+                points[i] = origin + points[i] * [
+                    (w * angle_cos + h * angle_sin),
+                    (h * angle_cos + w * angle_sin),
+                ]
 
         elif self[2] == "circle":
             points = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
@@ -224,15 +252,15 @@ class FPLine(Expr):
     """FPLine"""
 
     def corners(self):
-        """ corners returns start and end of the FPLine
-        """
-        points = np.array([[self.start[0], self.start[1]], [self.end[0], self.end[1]]],
-                          dtype=np.float64)
+        """corners returns start and end of the FPLine"""
+        points = np.array(
+            [[self.start[0], self.start[1]], [self.end[0], self.end[1]]],
+            dtype=np.float64,
+        )
         return points
 
     def bounding_box(self) -> BoundingBox:
-        """ bounding_box of the fp_line
-        """
+        """bounding_box of the fp_line"""
         return BoundingBox(self.corners())
 
 
@@ -243,19 +271,19 @@ class Polygon(Expr):
     """
 
     def bounding_box(self) -> BoundingBox:
-        """ bounding_box of the polygon
-        """
+        """bounding_box of the polygon"""
         return BoundingBox(self.corners())
 
     def corners(self) -> np.array:
-        """ corners returns the min and max points of a polygon
-        """
+        """corners returns the min and max points of a polygon"""
         x_points = []
         y_points = []
 
         for point in self.pts:
             if point.name != "xy":
-                raise NotImplementedError(f"the following polygon format isn't implemented yet: {point}")
+                raise NotImplementedError(
+                    f"the following polygon format isn't implemented yet: {point}"
+                )
             x_points.append(point[0])
             y_points.append(point[1])
 
@@ -267,7 +295,15 @@ class Polygon(Expr):
         max_y = np.amax(npy)
         min_y = np.amin(npy)
 
-        return np.array([[min_x, min_y], [min_x, max_y], [max_x, max_y], [max_x, min_y], ], dtype=np.float64)
+        return np.array(
+            [
+                [min_x, min_y],
+                [min_x, max_y],
+                [max_x, max_y],
+                [max_x, min_y],
+            ],
+            dtype=np.float64,
+        )
 
 
 @dataclass(init=False)
@@ -304,42 +340,40 @@ class Footprint(Expr):
         return box
 
     def prepend_path(self, path: str):
-        """ prepend_path prepends the uuid path to the current one
-        """
+        """prepend_path prepends the uuid path to the current one"""
         # path is always in the format of /<uuid>[/<uuid>]
         sub = self.path.data[0].strip('"')
-        self.path.data[0] = f"\"/{path}{sub}\""
+        self.path.data[0] = f'"/{path}{sub}"'
 
 
 @dataclass()
 class Elem(UserDict):
+    """SVG Element"""
 
-    def __init__(self, typ: str, inner=None, *args) -> None:
-        """ __init__
-        """
-        # TODO: inner element text
+    def __init__(self, typ: str, inner=None) -> None:
+        """__init__"""
         super().__init__()
         self.typ = typ
-        self.inner = ""
+        self.inner = inner
 
     def append(self, key: str, value: str):
-        """ creates and/or appends value to the given key
-        """
+        """creates and/or appends value to the given key"""
         if key in self.data:
             self.data[key].append(value)
         else:
             self.data[key] = [value]
 
     def to_string(self) -> str:
+        """build a string representation of the current svg element"""
         attrs = []
         for key, values in self.data.items():
-            v = ' '.join(values)
-            attrs.append(f'{key}="{v}"')
-        all_attrs = ' '.join(attrs)
+            joined_vals = " ".join(values)
+            attrs.append(f'{key}="{joined_vals}"')
+        all_attrs = " ".join(attrs)
         if self.inner == "":
-            return f'<{self.typ} {all_attrs} />'
-        else:
-            return f'<{self.typ} {all_attrs}>{self.inner}</{self.typ}>'
+            return f"<{self.typ} {all_attrs} />"
+
+        return f"<{self.typ} {all_attrs}>{self.inner}</{self.typ}>"
 
 
 @dataclass(init=False)
@@ -370,28 +404,33 @@ class Drawable(Movable):
             return None
         elif self.name == "polyline":
             for point in self.data[0]:
-                # rounding is necessary because otherwise you get 
+                # rounding is necessary because otherwise you get
                 # numbers ending with .9999999999 due to floating point precision :/
-                node.append("points",
-                            f"{self._scale(position[0] + point.data[0])},{self._scale(position[1] - point.data[1])}")
+                node.append(
+                    "points",
+                    f"{self._scale(position[0] + point.data[0])},{self._scale(position[1] - point.data[1])}",
+                )
         elif self.name == "rectangle":
             node.typ = "rect"
             xc, yc = [self.start[0], self.end[0]], [self.start[1], self.end[1]]
             width = max(xc) - min(xc)
             height = max(yc) - min(yc)
             x_mid = (self.start[0] + self.end[0]) / 2
-            y_mid = (self.start[1] + self.end[1]) / 2
+            # y_mid = (self.start[1] + self.end[1]) / 2
             svgx = min(position[0] + self.start[0], position[0] + self.end[0])
             svgy = min(position[1] - self.start[1], position[1] - self.end[1])
 
-            node.append("x", f'{round(svgx, self.svg_precision)}mm')
-            node.append("y", f'{round(svgy, self.svg_precision)}mm')
-            node.append("width", f'{round(width, self.svg_precision)}mm')
-            node.append("height", f'{round(height, self.svg_precision)}mm')
+            node.append("x", f"{round(svgx, self.svg_precision)}mm")
+            node.append("y", f"{round(svgy, self.svg_precision)}mm")
+            node.append("width", f"{round(width, self.svg_precision)}mm")
+            node.append("height", f"{round(height, self.svg_precision)}mm")
         elif self.name == "wire":
             node.typ = "polyline"
             for point in self.data[0]:
-                node.append("points", f"{self._scale(point.data[0])},{self._scale(point.data[1])}")
+                node.append(
+                    "points",
+                    f"{self._scale(point.data[0])},{self._scale(point.data[1])}",
+                )
         elif self.name in ["property", "hierarchical_label", "text", "label"]:
             node.typ = "text"
             has_effects = hasattr(self, "effects")
@@ -402,7 +441,9 @@ class Drawable(Movable):
 
             text = self.data[0].strip('"')
             if self.name == "property":
-                text = self.data[1].strip('"')  # property is key, value and we only display the value
+                text = self.data[1].strip(
+                    '"'
+                )  # property is key, value and we only display the value
 
             anchor = "middle"
 
@@ -438,7 +479,7 @@ class Drawable(Movable):
             node.append("x", f"{self._scale(x_mid)}")
             node.append("y", f"{self._scale(y)}")
 
-            node.append("font-size", f'{self._scale(font_size)}px')
+            node.append("font-size", f"{self._scale(font_size)}px")
             node.inner = text
         elif self.name == "junction":
             return f'<circle cx="{self._scale(self.at[0])}" cy="{self._scale(self.at[1])}" r="1.1" fill="green" stroke="green" stroke-width="1" />'
@@ -450,7 +491,7 @@ class Drawable(Movable):
     def parse_visual(self, node: Elem, at) -> None:
         """parse fill/stroke, if present"""
         attrs = []
-        if hasattr(self, 'stroke'):
+        if hasattr(self, "stroke"):
             color, opacity = parse_color(self.stroke.color)
 
             # in kicad 0 usually means default
@@ -477,7 +518,7 @@ class Drawable(Movable):
                 case "dash_dot_dot":
                     node.append("stroke-dasharray", "3 1 1 1 1 1")
 
-        if hasattr(self, 'fill'):
+        if hasattr(self, "fill"):
             match self.fill.type[0]:
                 case "none":
                     node.append("fill", "none")
@@ -524,8 +565,7 @@ class TStamp(Expr):
     """
 
     def randomize(self):
-        """randomize the tstamp UUID
-        """
+        """randomize the tstamp UUID"""
         # parse the old uuid first to catch edgecases
         _ = UUID(self.data[0])
         # generate a new random UUIDv4
@@ -534,9 +574,10 @@ class TStamp(Expr):
 
 @dataclass(init=False)
 class Net(Expr):
+    """Schematic/PCB net"""
 
     def rename(self, numbers: Dict[int, int], names: Dict[str, str]):
-        """ rename and/or re-number a net
+        """rename and/or re-number a net
 
         A net type is either net_name with only the name (net_name "abcd"), net with only the number (net 42)
         of net with number and name (net 42 "abcd")
@@ -566,7 +607,9 @@ def from_str(program: str) -> Expr:
     return expr
 
 
-def from_tokens(tokens: list, index: int, parent: str, grand_parent: str) -> Tuple[int, Union[Expr, int, float, str]]:
+def from_tokens(
+        tokens: list, index: int, parent: str, grand_parent: str
+) -> Tuple[int, Union[Expr, int, float, str]]:
     """Read an expression from a sequence of tokens."""
     if len(tokens) == index:
         raise SyntaxError("unexpected EOF")

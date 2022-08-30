@@ -26,7 +26,9 @@ copy_parts = ["footprint", "zone", "via", "segment", "arc", "gr_text", "gr_line"
 
 
 class VersionError(Exception):
-    pass
+    """ VersionError
+    Source file was produced with a KiCad version before 6.0
+    """
 
 
 class Schematic:
@@ -127,6 +129,7 @@ class Schematic:
             )
 
     def draw(self) -> list:
+        """draw the whole schematic"""
         svg_header = """<svg version="2.0" width="297mm" height="210mm" xmlns="http://www.w3.org/2000/svg">"""
         lines = []
         lines.append(svg_header)
@@ -151,20 +154,20 @@ class Schematic:
                 if isinstance(expr, Drawable):
                     lines.append(expr.draw((0, 0, sym.at[2])))
 
-        lines.append(f"<!--drawing wires -->")
+        lines.append("<!--drawing wires -->")
         for wire in self._sch.wire:
             lines.append(wire.draw(()))
 
-        lines.append(f"<!--drawing junk -->")
+        lines.append("<!--drawing junk -->")
         for j in self._sch.junction:
             lines.append(j.draw(()))
 
-        lines.append(f"<!--drawing text -->")
+        lines.append("<!--drawing text -->")
         for t in self._sch:
             if t.name == "text":
                 lines.append(t.draw(()))
 
-        lines.append(f"<!--drawing labels -->")
+        lines.append("<!--drawing labels -->")
         for t in self._sch:
             if t.name == "label":
                 lines.append(t.draw(()))
@@ -289,7 +292,7 @@ class Project:
             sch = from_str(sch_file.read())
 
         if sch.version[0] < 20211123:
-            raise VersionError(f"kicad file format versions pre-6.0.0 are unsupported")
+            raise VersionError("kicad file format versions pre-6.0.0 are unsupported")
 
         # loop through symbol instances and extract a tree for uuid to reference
         if hasattr(sch, "symbol_instances"):
@@ -345,7 +348,7 @@ class Project:
             elif "Fichier de feuille" in prop:
                 sheet_file_key = "Fichier de feuille"
             else:
-                raise ValueError(f"unknown property key for sheet file")
+                raise ValueError("unknown property key for sheet file")
 
             sheet_file = prop[sheet_file_key][1].strip('"')
             if os.path.basename(sheet_file) not in self.fn_to_uuid:
