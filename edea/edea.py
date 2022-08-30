@@ -48,7 +48,7 @@ class Schematic:
         """ return the schematic as an Expr """
         return self._sch
 
-    def to_sheet(self, sheet_name: str, file_name: str, pos_x=20.0, pos_y=20.0) -> (BoundingBox, Expr):
+    def to_sheet(self, sheet_name: str, file_name: str, pos_x=20.0, pos_y=20.0) -> Tuple[BoundingBox, Expr]:
         """ to_sheet extracts all hierarchical labels and generates a new sheet object from them
         """
 
