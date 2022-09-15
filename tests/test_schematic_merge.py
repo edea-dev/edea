@@ -6,7 +6,7 @@ SPDX-License-Identifier: EUPL-1.2
 
 from edea.edea import Schematic
 from edea.parser import from_str
-from tests.test_metadata import get_path_to_test_project
+from tests.util import get_path_to_test_project
 
 test_projects = {"3v3ldo": {}, "MP2451": {}, "STM32F072CBU6": {}}
 

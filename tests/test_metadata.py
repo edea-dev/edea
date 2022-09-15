@@ -6,8 +6,8 @@ This takes ferret, a fairly complex project and verifies some basic facts about 
 SPDX-License-Identifier: EUPL-1.2
 """
 
-import os
 from time import time
+from tests.util import get_path_to_test_project
 
 from edea.edea import Project
 
@@ -18,15 +18,6 @@ test_projects = {
         "copper_layers": 4
     }
 }
-
-
-def get_path_to_test_project(project_name, ext="kicad_sch"):
-    proj_path = ["kicad_projects", project_name, f"{project_name}.{ext}"]
-    test_folder_name = "tests"
-
-    if not os.getcwd().endswith(test_folder_name):
-        proj_path.insert(0, test_folder_name)
-    return os.path.join(*proj_path)
 
 
 class TestMetadata:
