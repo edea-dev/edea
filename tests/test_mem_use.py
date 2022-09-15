@@ -5,7 +5,7 @@ import sys
 from time import time
 
 from edea.parser import from_str
-from tests.test_metadata import get_path_to_test_project
+from tests.util import get_path_to_test_project
 
 test_projects = {
     "ferret": {

@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from edea.edea import PCB
 from edea.parser import from_str
-from tests.test_metadata import get_path_to_test_project
+from tests.util import get_path_to_test_project
 
 test_projects = {
     "ferret": {
