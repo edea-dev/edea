@@ -8,7 +8,11 @@ import os
 import re
 import pytest
 
+from pydantic import ValidationError
+
 from edea.edea import Project, VersionError
+from edea.parser import from_str_to_list
+from edea.types.schematic import Schematic
 
 test_folder = os.path.dirname(os.path.realpath(__file__))
 kicad_folder = os.path.join(test_folder, "kicad_projects/kicad6-test-files")
@@ -20,10 +24,15 @@ for root, dirs, files in os.walk(kicad_folder):
             path = os.path.join(root, file)
             kicad_pcb_files.append(path)
 
+kicad_projects = [
+    (re.sub(r"\.kicad_pcb$", ".kicad_sch", pcb_path), pcb_path)
+    for pcb_path in kicad_pcb_files
+]
 
-@pytest.mark.parametrize("pcb_path", kicad_pcb_files)
-def test_parse_all(pcb_path):
-    sch_path = re.sub(r"\.kicad_pcb$", ".kicad_sch", pcb_path)
+
+@pytest.mark.parametrize("kicad_file_pair", kicad_projects)
+def test_parse_all(kicad_file_pair):
+    sch_path, pcb_path = kicad_file_pair
     pro = Project(sch_path, pcb_path)
     try:
         pro.parse()
@@ -42,3 +51,31 @@ def test_parse_all(pcb_path):
     except Exception as e:
         print(f"failed to parse {sch_path}")
         raise e
+
+
+kicad_sch_files = []
+for root, dirs, files in os.walk(kicad_folder):
+    for file in files:
+        if file.endswith(".kicad_sch"):
+            path = os.path.join(root, file)
+            kicad_sch_files.append(path)
+
+
+@pytest.mark.parametrize("sch_path", kicad_sch_files)
+def test_parse_all_types(sch_path):
+    with open(sch_path, encoding="utf-8") as f:
+        l = from_str_to_list(f.read())
+
+    try:
+        sch = Schematic.from_list_expr(l)
+    except ValidationError as err:
+        is_version_error = False
+        for e in err.errors():
+            if "version" in e["loc"]:
+                is_version_error = True
+                break
+        if not is_version_error:
+            raise err
+        print(f"skipping {sch_path} due to unsupported version: {err}")
+    else:
+        assert sch is not None
