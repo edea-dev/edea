@@ -13,6 +13,7 @@ from itertools import filterfalse, groupby
 from operator import methodcaller
 from typing import Dict, List, Tuple
 from uuid import uuid4
+from copy import deepcopy
 
 import numpy as np
 
@@ -130,7 +131,7 @@ class Schematic:
 
     def draw(self) -> list:
         """draw the whole schematic"""
-        svg_header = """<svg version="2.0" width="297mm" height="210mm" xmlns="http://www.w3.org/2000/svg">"""
+        svg_header = """<svg version="2.0" viewBox="0 0 297 210" width="297mm" height="210mm" xmlns="http://www.w3.org/2000/svg">"""
         lines = []
         lines.append(svg_header)
 
@@ -144,6 +145,12 @@ class Schematic:
                 if isinstance(expr, Expr) and expr.name == "symbol":
                     # loop the inner symbol
                     for e in expr:
+                        # flip the y-axis of polylines
+                        if isinstance(e, Expr) and e.name == "polyline":
+                            e = deepcopy(e)
+                            for pt in e.pts:
+                                pt.data[1] = -pt.data[1]
+
                         if isinstance(e, Drawable):
                             lines.append(e.draw(sym.at))
                 elif isinstance(expr, Drawable) and expr.name not in [
@@ -171,6 +178,11 @@ class Schematic:
         for t in self._sch:
             if t.name == "label":
                 lines.append(t.draw(()))
+
+        lines.append("<!--drawing polylines -->")
+        for t in self._sch:
+            if t.name == "polyline":
+                lines.append(t.draw(((0,0))))
 
         lines.append('</svg>')
         return lines

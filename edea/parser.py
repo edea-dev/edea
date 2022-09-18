@@ -6,6 +6,7 @@ SPDX-License-Identifier: EUPL-1.2
 from __future__ import annotations
 
 import re
+from copy import deepcopy, copy
 from _operator import methodcaller
 from collections import UserDict, UserList
 from dataclasses import dataclass
@@ -181,6 +182,22 @@ class Expr(UserList):
             raise NotImplementedError
 
         return self[0].startswith(prefix)
+
+    def __copy__(self):
+        c = type(self)(typ=self.name)
+        for name in self.__slots__:
+            value = copy(getattr(self, name))
+            setattr(c, name, value)
+        return c
+
+    def __deepcopy__(self, memo):
+        c = type(self)(typ=self.name)
+        memo[id(self)] = c
+        for name in self.__slots__:
+            value = deepcopy(getattr(self, name))
+            setattr(c, name, value)
+        return c
+
 
 
 @dataclass(init=False)
@@ -370,7 +387,7 @@ class Elem(UserDict):
             joined_vals = " ".join(values)
             attrs.append(f'{key}="{joined_vals}"')
         all_attrs = " ".join(attrs)
-        if self.inner == "":
+        if self.inner is None or self.inner == "":
             return f"<{self.typ} {all_attrs} />"
 
         return f"<{self.typ} {all_attrs}>{self.inner}</{self.typ}>"
@@ -385,11 +402,7 @@ class Drawable(Movable):
     rectangle: usually ic symbols
     """
 
-    scale_factor = 3.78  # pixels per mm, 96 dpi / 25.4mm
     svg_precision = 4
-
-    def _scale(self, value) -> float:
-        return round(value * self.scale_factor, self.svg_precision)
 
     def draw(self, position: Tuple[float, float] | Tuple[float, float, float]):
         """draw the shape with the given offset"""
@@ -406,10 +419,9 @@ class Drawable(Movable):
             for point in self.data[0]:
                 # rounding is necessary because otherwise you get
                 # numbers ending with .9999999999 due to floating point precision :/
-                node.append(
-                    "points",
-                    f"{self._scale(position[0] + point.data[0])},{self._scale(position[1] - point.data[1])}",
-                )
+                x = round(position[0] + point.data[0], self.svg_precision)
+                y = round(position[1] + point.data[1], self.svg_precision)
+                node.append("points", f"{x},{y}")
         elif self.name == "rectangle":
             node.typ = "rect"
             xc, yc = [self.start[0], self.end[0]], [self.start[1], self.end[1]]
@@ -418,18 +430,20 @@ class Drawable(Movable):
             x_mid = (self.start[0] + self.end[0]) / 2
             # y_mid = (self.start[1] + self.end[1]) / 2
             svgx = min(position[0] + self.start[0], position[0] + self.end[0])
+            # kicad flips the y-axis when going from symbol to schematic for
+            # some reason, hence we are subtracting here
             svgy = min(position[1] - self.start[1], position[1] - self.end[1])
 
-            node.append("x", f"{round(svgx, self.svg_precision)}mm")
-            node.append("y", f"{round(svgy, self.svg_precision)}mm")
-            node.append("width", f"{round(width, self.svg_precision)}mm")
-            node.append("height", f"{round(height, self.svg_precision)}mm")
+            node.append("x", f"{round(svgx, self.svg_precision)}")
+            node.append("y", f"{round(svgy, self.svg_precision)}")
+            node.append("width", f"{round(width, self.svg_precision)}")
+            node.append("height", f"{round(height, self.svg_precision)}")
         elif self.name == "wire":
             node.typ = "polyline"
             for point in self.data[0]:
                 node.append(
                     "points",
-                    f"{self._scale(point.data[0])},{self._scale(point.data[1])}",
+                    f"{point.data[0]},{point.data[1]}",
                 )
         elif self.name in ["property", "hierarchical_label", "text", "label"]:
             node.typ = "text"
@@ -475,14 +489,13 @@ class Drawable(Movable):
 
             node.append("font-family", "monospace")
 
-            # node.append("transform-origin", f'{self._scale(x_mid)}, {self._scale(y)}')
-            node.append("x", f"{self._scale(x_mid)}")
-            node.append("y", f"{self._scale(y)}")
+            node.append("x", f"{x_mid}")
+            node.append("y", f"{y}")
 
-            node.append("font-size", f"{self._scale(font_size)}px")
+            node.append("font-size", f"{font_size}px")
             node.inner = text
         elif self.name == "junction":
-            return f'<circle cx="{self._scale(self.at[0])}" cy="{self._scale(self.at[1])}" r="1.1" fill="green" stroke="green" stroke-width="1" />'
+            return f'<circle cx="{self.at[0]}" cy="{self.at[1]}" r="0.5" fill="green" stroke="green" stroke-width="0" />'
         else:
             raise NotImplementedError(self.name)
 
@@ -504,7 +517,7 @@ class Drawable(Movable):
 
             node.append("stroke", f"rgb({color})")
             node.append("stroke-opacity", f"{opacity}")
-            node.append("stroke-width", f"{stroke_width}mm")
+            node.append("stroke-width", f"{stroke_width}")
 
             match self.stroke.type[0]:
                 case ("default" | "solid"):
