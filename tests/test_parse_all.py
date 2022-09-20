@@ -11,7 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from edea.edea import Project, VersionError
-from edea.parser import from_str_to_list
+from edea.types.parser import from_str
 from edea.types.schematic import Schematic
 
 test_folder = os.path.dirname(os.path.realpath(__file__))
@@ -64,18 +64,17 @@ for root, dirs, files in os.walk(kicad_folder):
 @pytest.mark.parametrize("sch_path", kicad_sch_files)
 def test_parse_all_types(sch_path):
     with open(sch_path, encoding="utf-8") as f:
-        l = from_str_to_list(f.read())
+        try:
+            sch = from_str(f.read())
+        except ValidationError as err:
+            is_version_error = False
+            for e in err.errors():
+                if "version" in e["loc"]:
+                    is_version_error = True
+                    break
+            if not is_version_error:
+                raise err
+            print(f"skipping {sch_path} due to unsupported version: {err}")
+        else:
+            assert isinstance(sch, Schematic)
 
-    try:
-        sch = Schematic.from_list_expr(l)
-    except ValidationError as err:
-        is_version_error = False
-        for e in err.errors():
-            if "version" in e["loc"]:
-                is_version_error = True
-                break
-        if not is_version_error:
-            raise err
-        print(f"skipping {sch_path} due to unsupported version: {err}")
-    else:
-        assert sch is not None

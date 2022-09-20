@@ -12,8 +12,8 @@ from pydantic import validator
 from pydantic.color import Color
 from pydantic.dataclasses import dataclass
 
-from edea.types.config import PydanticConfig, IsPresent
-from edea.types.from_list_expr import from_list_expr
+from edea.types.config import PydanticConfig
+from edea.types.base import KicadExpr
 from edea.types.schematic.shapes import Pts, Stroke, Fill
 from edea.types.schematic.symbol import Effects, Symbol, SymbolProperty
 
@@ -41,43 +41,44 @@ class PaperOrientation(str, Enum):
 
 
 @dataclass(config=PydanticConfig)
-class PaperUser:
+class PaperUser(KicadExpr):
     format: Literal["User"] = "User"
     width: float = 0
     height: float = 0
-
-    from_list_expr = from_list_expr
+    kicad_expr_tag_name: Literal["paper"] = "paper"
 
 
 @dataclass(config=PydanticConfig)
-class Paper:
+class Paper(KicadExpr):
     format: PaperFormat = PaperFormat.A4
     orientation: PaperOrientation = PaperOrientation.LANDSCAPE
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class PinAssignment:
+class PinAssignment(KicadExpr):
     number: str
     uuid: UUID = field(default_factory=uuid4)
     alternate: Optional[str] = None
-
-    from_list_expr = from_list_expr
+    kicad_expr_tag_name: Literal["pin"] = "pin"
 
 
 @dataclass(config=PydanticConfig)
-class DefaultInstance:
+class DefaultInstance(KicadExpr):
     reference: str
     unit: int = 1
     value: str = ""
     footprint: str = ""
 
-    from_list_expr = from_list_expr
+
+@dataclass(config=PydanticConfig)
+class IsFieldsAutoplaced(KicadExpr):
+    kicad_expr_tag_name: Literal["fields_autoplaced"] = "fields_autoplaced"
+    # holds no data, appears simply as "(fields_autoplaced)" with parens.
+    # maybe there is a less ugly solution to this?
 
 
 @dataclass(config=PydanticConfig)
-class SymbolPlaced:
+class SymbolPlaced(KicadExpr):
     lib_id: str
     lib_name: Optional[str] = None
     at: tuple[float, float, float] = (0, 0, 0)
@@ -90,47 +91,39 @@ class SymbolPlaced:
     default_instance: Optional[DefaultInstance] = None
     property: list[SymbolProperty] = field(default_factory=list)
     pin: list[PinAssignment] = field(default_factory=list)
-    fields_autoplaced: Optional[IsPresent] = None
-
-    from_list_expr = from_list_expr
+    fields_autoplaced: Optional[IsFieldsAutoplaced] = None
+    kicad_expr_tag_name: Literal["symbol"] = "symbol"
 
 
 @dataclass(config=PydanticConfig)
-class Wire:
+class Wire(KicadExpr):
     pts: Pts = field(default_factory=Pts)
     stroke: Stroke = field(default_factory=Stroke)
     uuid: UUID = field(default_factory=uuid4)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class Junction:
+class Junction(KicadExpr):
     at: tuple[float, float]
     diameter: float = 0
     color: Color = Color((0, 0, 0, 0))
     uuid: UUID = field(default_factory=uuid4)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class NoConnect:
+class NoConnect(KicadExpr):
     at: tuple[float, float]
     uuid: UUID = field(default_factory=uuid4)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class LocalLabel:
+class LocalLabel(KicadExpr):
     text: str
     at: tuple[float, float, float]
-    fields_autoplaced: Optional[IsPresent] = None
+    fields_autoplaced: Optional[IsFieldsAutoplaced] = None
     effects: Effects = field(default_factory=Effects)
     uuid: UUID = field(default_factory=uuid4)
-
-    from_list_expr = from_list_expr
+    kicad_expr_tag_name: Literal["label"] = "label"
 
 
 class LabelShape(str, Enum):
@@ -142,114 +135,101 @@ class LabelShape(str, Enum):
 
 
 @dataclass(config=PydanticConfig)
-class GlobalLabel:
+class GlobalLabel(KicadExpr):
     text: str
     at: tuple[float, float, float]
     shape: LabelShape = LabelShape.BIDIRECTIONAL
     effects: Effects = field(default_factory=Effects)
     uuid: UUID = field(default_factory=uuid4)
     property: list[SymbolProperty] = field(default_factory=list)
-    fields_autoplaced: Optional[IsPresent] = None
-
-    from_list_expr = from_list_expr
+    fields_autoplaced: Optional[IsFieldsAutoplaced] = None
 
 
 @dataclass(config=PydanticConfig)
-class HierarchicalLabel:
+class HierarchicalLabel(KicadExpr):
     text: str
     at: tuple[float, float, float]
     shape: LabelShape = LabelShape.BIDIRECTIONAL
     effects: Effects = field(default_factory=Effects)
     uuid: UUID = field(default_factory=uuid4)
-    fields_autoplaced: Optional[IsPresent] = None
-
-    from_list_expr = from_list_expr
+    fields_autoplaced: Optional[IsFieldsAutoplaced] = None
 
 
 @dataclass(config=PydanticConfig)
-class LibSymbols:
+class LibSymbols(KicadExpr):
     symbol: list[Symbol] = field(default_factory=list)
-    from_list_expr = from_list_expr
 
 
 @dataclass(config=PydanticConfig)
-class TitleBlockComment:
+class TitleBlockComment(KicadExpr):
     number: int = 1
     text: str = ""
-    from_list_expr = from_list_expr
+    kicad_expr_tag_name: Literal["comment"] = "comment"
 
 
 @dataclass(config=PydanticConfig)
-class TitleBlock:
+class TitleBlock(KicadExpr):
     title: str = ""
     date: str = ""
     rev: str = ""
     company: str = ""
     comment: list[TitleBlockComment] = field(default_factory=list)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class SheetPath:
+class SheetPath(KicadExpr):
     path: str = "/"
     page: str = "1"
-
-    from_list_expr = from_list_expr
+    kicad_expr_tag_name: Literal["path"] = "path"
 
 
 @dataclass(config=PydanticConfig)
-class SheetInstances:
+class SheetInstances(KicadExpr):
     path: list[SheetPath] = field(default_factory=list)
-    from_list_expr = from_list_expr
 
 
 @dataclass(config=PydanticConfig)
-class SymbolInstancesPath:
+class SymbolInstancesPath(KicadExpr):
     path: str
     reference: str
     unit: int
     value: str
     footprint: str = ""
-
-    from_list_expr = from_list_expr
+    kicad_expr_tag_name: Literal["path"] = "path"
 
 
 @dataclass(config=PydanticConfig)
-class SymbolInstances:
+class SymbolInstances(KicadExpr):
     path: list[SymbolInstancesPath] = field(default_factory=list)
-    from_list_expr = from_list_expr
 
 
 @dataclass(config=PydanticConfig)
-class PolyLineTopLevel:
+class PolyLineTopLevel(KicadExpr):
     pts: Pts = field(default_factory=Pts)
     stroke: Stroke = field(default_factory=Stroke)
     fill: Fill = field(default_factory=Fill)
     uuid: UUID = field(default_factory=uuid4)
-
-    from_list_expr = from_list_expr
+    kicad_expr_tag_name: Literal["polyline"] = "polyline"
 
 
 @dataclass(config=PydanticConfig)
-class FillColor:
+class FillColor(KicadExpr):
     color: Color = Color((0, 0, 0, 0))
-    from_list_expr = from_list_expr
+    kicad_expr_tag_name: Literal["fill"] = "fill"
 
 
 @dataclass(config=PydanticConfig)
-class SheetPin:
+class SheetPin(KicadExpr):
     name: str
     shape: LabelShape = LabelShape.BIDIRECTIONAL
     at: tuple[float, float, float] = (0, 0, 0)
     effects: Effects = field(default_factory=Effects)
     uuid: UUID = field(default_factory=uuid4)
-
-    from_list_expr = from_list_expr
+    kicad_expr_tag_name: Literal["pin"] = "pin"
 
 
 @dataclass(config=PydanticConfig)
-class Sheet:
+class Sheet(KicadExpr):
     at: tuple[float, float]
     size: tuple[float, float]
     stroke: Stroke = field(default_factory=Stroke)
@@ -257,50 +237,40 @@ class Sheet:
     uuid: UUID = field(default_factory=uuid4)
     property: list[SymbolProperty] = field(default_factory=list)
     pin: list[SheetPin] = field(default_factory=list)
-    fields_autoplaced: Optional[IsPresent] = None
-
-    from_list_expr = from_list_expr
+    fields_autoplaced: Optional[IsFieldsAutoplaced] = None
 
 
 @dataclass(config=PydanticConfig)
-class BusEntry:
+class BusEntry(KicadExpr):
     at: tuple[float, float]
     size: tuple[float, float]
     stroke: Stroke = field(default_factory=Stroke)
     uuid: UUID = field(default_factory=uuid4)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class Bus:
+class Bus(KicadExpr):
     pts: Pts = field(default_factory=Pts)
     stroke: Stroke = field(default_factory=Stroke)
     uuid: UUID = field(default_factory=uuid4)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class Image:
+class Image(KicadExpr):
     at: tuple[float, float]
     scale: Optional[float] = None
     uuid: UUID = field(default_factory=uuid4)
     data: list[str] = field(default_factory=list)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class BusAlias:
+class BusAlias(KicadExpr):
     name: str
     members: list[str] = field(default_factory=list)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class Schematic:
+class Schematic(KicadExpr):
     version: int = 20211123
 
     @validator("version")
@@ -334,4 +304,4 @@ class Schematic:
     symbol_instances: SymbolInstances = field(default_factory=SymbolInstances)
     bus_alias: list[BusAlias] = field(default_factory=list)
 
-    from_list_expr = from_list_expr
+    kicad_expr_tag_name: Literal["kicad_sch"] = "kicad_sch"
