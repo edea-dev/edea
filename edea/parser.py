@@ -620,10 +620,6 @@ def from_str(program: str) -> Expr:
     return expr
 
 
-def from_str_to_list(program) -> list:
-    tokens = TOKENIZE_EXPR.findall(program)
-    _, expr = tokens_to_list(tokens, 0)
-    return expr
 
 
 def from_tokens(
@@ -682,30 +678,3 @@ def from_tokens(
             return (index, Symbol(token))
 
 
-def tokens_to_list(tokens: list, index: int = 0):
-    if len(tokens) == index:
-        raise SyntaxError("unexpected EOF")
-    token = tokens[index]
-    index += 1
-
-    if token == "(":
-        typ = tokens[index]
-        index += 1
-
-        expr = [typ]
-        while tokens[index] != ")":
-            index, sub_expr = tokens_to_list(tokens, index)
-            expr.append(sub_expr)
-
-        # remove ')'
-        index += 1
-
-        return (index, expr)
-
-
-    if token == ")":
-        raise SyntaxError("unexpected )")
-
-    if token.startswith('"') and token.endswith('"'):
-        token = token.strip('"')
-    return (index, token)

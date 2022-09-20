@@ -11,7 +11,7 @@ from pydantic.color import Color
 from pydantic.dataclasses import dataclass
 
 from edea.types.config import PydanticConfig
-from edea.types.from_list_expr import from_list_expr
+from edea.types.base import KicadExpr
 
 
 class FillType(str, Enum):
@@ -30,89 +30,70 @@ class StrokeType(str, Enum):
 
 
 @dataclass(config=PydanticConfig)
-class Stroke:
+class Stroke(KicadExpr):
     width: float = 0.1524
     type: StrokeType = StrokeType.DEFAULT
     color: Color = Color((0, 0, 0, 1))
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class Fill:
+class Fill(KicadExpr):
     type: FillType = FillType.NONE
-    from_list_expr = from_list_expr
 
 
 @dataclass(config=PydanticConfig)
-class XY:
+class XY(KicadExpr):
     x: float
     y: float
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class Pts:
+class Pts(KicadExpr):
     xy: list[XY] = field(default_factory=list)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class PolyLine:
+class PolyLine(KicadExpr):
     pts: Pts = field(default_factory=Pts)
     stroke: Stroke = field(default_factory=Stroke)
     fill: Fill = field(default_factory=Fill)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class Bezier:
+class Bezier(KicadExpr):
     pts: Pts = field(default_factory=Pts)
     stroke: Stroke = field(default_factory=Stroke)
     fill: Fill = field(default_factory=Fill)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class Rectangle:
+class Rectangle(KicadExpr):
     start: tuple[float, float]
     end: tuple[float, float]
     stroke: Stroke = field(default_factory=Stroke)
     fill: Fill = field(default_factory=Fill)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class Circle:
+class Circle(KicadExpr):
     center: tuple[float, float]
     radius: float
     stroke: Stroke = field(default_factory=Stroke)
     fill: Fill = field(default_factory=Fill)
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class Radius:
+class Radius(KicadExpr):
     at: tuple[float, float]
     length: float
     angles: tuple[float, float]
 
-    from_list_expr = from_list_expr
-
 
 @dataclass(config=PydanticConfig)
-class Arc:
+class Arc(KicadExpr):
     start: tuple[float, float]
     end: tuple[float, float]
     mid: Optional[tuple[float, float]] = None
     radius: Optional[Radius] = None
     stroke: Stroke = field(default_factory=Stroke)
     fill: Fill = field(default_factory=Fill)
-
-    from_list_expr = from_list_expr
