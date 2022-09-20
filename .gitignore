@@ -15,6 +15,7 @@ fp-info-cache
 /dist
 __pycache__
 .coverage
+poetry.lock
 
 # temp tools and files
 format.l
