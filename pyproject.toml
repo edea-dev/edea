@@ -7,12 +7,14 @@ license = "EUPL-1.2"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-numpy = "^1.21.4" # latest version in current alpine
+numpy = ">=1.21.4"
+Pillow = "^9.2.0"
+pyvips = "^2.2.1"
 pydantic = "^1.10.2"
 
 [tool.poetry.dev-dependencies]
-pylint = "^2.13.7"
-pytest = "^7.1.2"
+pylint = "^2.15.3"
+pytest = "^7.1.3"
 bandit = "^1.7.4"
 pytest-cov = "^3.0.0"
 

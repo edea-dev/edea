@@ -15,6 +15,7 @@ from time import time
 from typing import Dict
 
 from .edea import Schematic, Project
+from .imgdiff import imgdiff
 from .kicad_files import EMPTY_PROJECT
 from .parser import from_str
 
@@ -24,10 +25,16 @@ pgroup.add_argument('--extract-meta', help='Extract metadata from KiCad project 
                     action='store_true')
 pgroup.add_argument('--merge', action='store_true', help='Merge the listed KiCad projects into a single project ('
                                                          'specify target directory with the output argument).')
+parser.add_argument('--diff', action='store_true', help='Render visual differences of images stored in two different'
+                                                        'directories, output the result to a third directory.'
+                                                        'The image files must have the same file name.')
 parser.add_argument('--output', type=str, nargs='?', default=False,
                     help="Specify output directory for merge, or output file for metadata extraction.")
-parser.add_argument('projects', type=str, nargs='+',
+parser.add_argument('projects', type=str, nargs='?',
                     help='Path(s) to KiCad Project directory used as input.')
+parser.add_argument('-adir', type=str, nargs='?', default=None, help='Visual diff input directory A')
+parser.add_argument('-bdir', type=str, nargs='?', default=None, help='Visual diff input directory B')
+parser.add_argument('-odir', type=str, nargs='?', default=None, help='Visual diff output directory')
 
 args = parser.parse_args()
 
@@ -151,6 +158,44 @@ elif args.merge:
     with open(f"{os.path.join(output_path, output_name)}.kicad_pro", "w", encoding="utf-8") as f:
         s = Template(EMPTY_PROJECT)
         f.write(s.substitute(project_name=output_name))
+
+elif args.diff:
+    input_dir_a = args.adir
+    input_dir_b = args.bdir
+    output_dir = args.odir
+
+    file_lists = {
+        "a": [],
+        "b": [],
+        "o": [],
+        "A": [],
+        "B": [],
+    }
+
+    for dirlabel, dirpath in [('a', input_dir_a), ('b', input_dir_b)]:
+        with os.scandir(dirpath) as dir_iterator:
+            for entry in dir_iterator:
+                if entry.is_file() and (entry.name.endswith('.png') or entry.name.endswith('.svg')):
+                    file_lists[dirlabel].append(entry.name)
+
+    common_files = set(file_lists['a']).intersection(file_lists['b'])
+
+    stats = []
+
+    for fn in common_files:
+        for dirlabel, dirpath in [('A', input_dir_a), ('B', input_dir_b), ('o', output_dir)]:
+            file_lists[dirlabel].append(os.path.join(dirpath, fn if dirlabel != 'o' else fn[:-4] + '.png'))
+        stats.append({'fn': fn})
+
+    for idx in range(len(common_files)):
+        params = []
+        for identifier in 'ABo':
+            params.append(file_lists[identifier][idx])
+        stats[idx]['difference_pct'] = imgdiff(*tuple(params))
+
+    with open(os.path.join(output_dir, 'stats.json'), 'wt') as of:
+        of.write(json.dumps(stats))
+
 else:
     log.error("only merge and metadata extraction are implemented for now")
     sys.exit(1)
