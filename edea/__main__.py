@@ -30,8 +30,8 @@ parser.add_argument('--diff', action='store_true', help='Render visual differenc
                                                         'The image files must have the same file name.')
 parser.add_argument('--output', type=str, nargs='?', default=False,
                     help="Specify output directory for merge, or output file for metadata extraction.")
-parser.add_argument('projects', type=str, nargs='?',
-                    help='Path(s) to KiCad Project directory used as input.')
+parser.add_argument('projects', type=str, nargs='+',
+                    help='Path(s) to the KiCad Project directory used as input.')
 parser.add_argument('-adir', type=str, nargs='?', default=None, help='Visual diff input directory A')
 parser.add_argument('-bdir', type=str, nargs='?', default=None, help='Visual diff input directory B')
 parser.add_argument('-odir', type=str, nargs='?', default=None, help='Visual diff output directory')
@@ -160,9 +160,9 @@ elif args.merge:
         f.write(s.substitute(project_name=output_name))
 
 elif args.diff:
-    input_dir_a = args.adir
-    input_dir_b = args.bdir
-    output_dir = args.odir
+    input_dir_a = args.projects[0]
+    input_dir_b = args.projects[1]
+    output_dir = args.output
 
     file_lists = {
         "a": [],
